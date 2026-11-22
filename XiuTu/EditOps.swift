@@ -350,6 +350,31 @@ extension EditOp {
         return false
     }
 
+    /// 浮在照片上面的装饰（文字、贴纸、形状、图层）：AI 只处理下面的照片，它们一直留在最上面。
+    var floats: Bool {
+        switch self {
+        case .overlay, .layers: return true
+        default: return false
+        }
+    }
+
+    /// 把历史末尾那些浮在照片上的装饰挑出来（它们后面没有改画布的步骤，挪到最后不会变位置）。
+    /// photo = 照片本身的步骤，floating = 可以一直浮在最上面的装饰。
+    static func splitFloating(_ ops: [EditOp]) -> (photo: [EditOp], floating: [EditOp]) {
+        var photo: [EditOp] = []
+        var floating: [EditOp] = []
+        var movable = true
+        for op in ops.reversed() {
+            if movable, op.floats {
+                floating.insert(op, at: 0)
+            } else {
+                if op.changesCanvas { movable = false }
+                photo.insert(op, at: 0)
+            }
+        }
+        return (photo, floating)
+    }
+
     /// 会改变画布大小、或者把整个画面挪了位置的步骤。
     var changesCanvas: Bool {
         switch self {
@@ -362,7 +387,7 @@ extension EditOp {
     /// 再次进入这个工具时，这一步是不是该被重新打开接着改。
     func reopens(with tool: Tool) -> Bool {
         switch (self, tool) {
-        case (.overlay, .text), (.overlay, .sticker), (.mosaic, .mosaic), (.doodle, .doodle), (.doodle, .mark),
+        case (.overlay, .text), (.overlay, .sticker), (.overlay, .graphic), (.mosaic, .mosaic), (.doodle, .doodle), (.doodle, .mark),
              (.frame, .frame), (.backdrop, .backdrop), (.effect, .effect):
             return true
         default:

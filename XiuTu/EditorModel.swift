@@ -121,6 +121,9 @@ final class EditorModel {
     var aiToneOnly = false
     /// 最近一次请求的实际用量说明。
     var aiUsageText: String?
+    /// 进 AI 修图 / 美颜时先拿下来的装饰（文字、贴纸、形状、图层）：AI 只处理照片，确认后再放回最上面。
+    @ObservationIgnored var liftedFloating: [EditOp] = []
+    @ObservationIgnored private var liftedSaved: (CIImage?, UIImage?) = (nil, nil)
     /// 当前这次 AI 是怎么发起的（存进历史，套用步骤时用）。
     @ObservationIgnored var aiPendingRecipe: AIRecipe?
     /// 正在套用别的图的处理步骤：显示的进度，比如"3/7 大师 · 滨田英明"。
@@ -354,7 +357,9 @@ final class EditorModel {
     func saveDraft() {
         guard draftEnabled, let proxy else { return }
         var all = ops
-        if tool == .ai, let pending = pendingOps() { all += pending }
+        if tool == .ai, let pending = pendingOps() {
+            all = liftedFloating.isEmpty ? all + pending : EditOp.splitFloating(ops).photo + pending + liftedFloating
+        }
         guard !all.isEmpty else { return }
         let original = draftOriginal
         let token = DraftStore.shared.token
@@ -405,7 +410,7 @@ final class EditorModel {
             mosaic = MosaicParams()
             erasing = false
             maskSet = MosaicMaskSet(width: Int(base.extent.width), height: Int(base.extent.height))
-        case .text, .sticker:
+        case .text, .sticker, .graphic:
             overlayItems = []
             selectedOverlayID = nil
         case .ai:
@@ -458,6 +463,29 @@ final class EditorModel {
         }
         tool = t
         refreshDetail()
+        if t == .ai || t == .beauty { liftFloating() }
+    }
+
+    /// 进 AI 修图 / 美颜：末尾的装饰先拿下来，底图换成只有照片的样子；确认后装饰放回最上面。
+    private func liftFloating() {
+        let split = EditOp.splitFloating(ops)
+        guard !split.floating.isEmpty, reopened == nil, let proxy else { return }
+        liftedFloating = split.floating
+        liftedSaved = (basePreview, baseUIImage)
+        let photo = split.photo
+        Task { [weak self] in
+            let r = await Task.detached(priority: .userInitiated) {
+                Renderer.shared.rasterize(EditOp.apply(photo, to: proxy), maxDimension: 1600)
+            }.value
+            guard let self, !self.liftedFloating.isEmpty, let r else { return }
+            self.basePreview = r.ci
+            self.baseUIImage = UIImage(cgImage: r.cg)
+            // 预设的缩略图也换成没有装饰的照片。
+            self.masterThumbs = [:]
+            self.masterThumbsStarted = false
+            if self.tool == .ai { self.prepareMasterThumbs() }
+            if self.tool == .ai, self.aiHasResult { self.renderAI() } else { self.displayImage = self.baseUIImage }
+        }
     }
 
     private func resetAI() {
@@ -571,6 +599,11 @@ final class EditorModel {
     }
 
     func cancelTool() {
+        if !liftedFloating.isEmpty {
+            liftedFloating = []
+            if let preview = liftedSaved.0 { basePreview = preview }
+            if let image = liftedSaved.1 { baseUIImage = image }
+        }
         resetAI()
         focusRect = nil
         tool = nil
@@ -598,7 +631,7 @@ final class EditorModel {
     private func reopenPlan(for t: Tool) -> ReopenPlan? {
         // AI 整张重画过之后，前面那些步骤已经画死在结果里，不能再单独改。
         let barrier = ops.lastIndex { $0.bakesInput } ?? -1
-        if t == .text || t == .sticker {
+        if t == .text || t == .sticker || t == .graphic {
             // 后面没有动过画布大小的文字 / 贴纸：全部拿出来放到最上面一起改，改的时候看到的就是成品的样子。
             let floor = max(barrier, ops.lastIndex { $0.changesCanvas } ?? -1)
             var items: [OverlayItem] = []
@@ -705,7 +738,7 @@ final class EditorModel {
                     let c = cos(item.rotation), s = sin(item.rotation)
                     let lx = dx * c + dy * s, ly = -dx * s + dy * c
                     if abs(lx) <= w / 2 + 0.015, abs(ly) <= h / 2 + 0.015 {
-                        open(item.isSticker ? .sticker : .text, selecting: item.id)
+                        open(item.isGraphic ? .graphic : (item.isSticker ? .sticker : .text), selecting: item.id)
                         return
                     }
                 }
@@ -746,7 +779,7 @@ final class EditorModel {
             if !crop.isIdentity { op = .crop(crop) }
         case .mosaic:
             if mosaic.hasPaint { op = .mosaic(mosaic) }
-        case .text, .sticker:
+        case .text, .sticker, .graphic:
             let items = overlayItems.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             if !items.isEmpty { op = .overlay(items) }
         case .ai:
@@ -801,8 +834,14 @@ final class EditorModel {
             return
         }
         recordUndo()
-        ops.append(op)
-        ops.append(contentsOf: extra)
+        if !liftedFloating.isEmpty {
+            // AI 的结果放在照片这一层，装饰仍然浮在最上面。
+            ops = EditOp.splitFloating(ops).photo + [op] + extra + liftedFloating
+            liftedFloating = []
+        } else {
+            ops.append(op)
+            ops.append(contentsOf: extra)
+        }
         Task {
             await rebuildBase()
             tool = nil
@@ -911,7 +950,8 @@ final class EditorModel {
         detailTask?.cancel()
         if detailImage != nil { detailImage = nil }
         guard let rect = viewport, let proxy, !isBusy, !isLoading, let pending = pendingOps() else { return }
-        let all = (reopened?.prefix ?? ops) + pending
+        let all = reopened.map { $0.prefix + pending }
+            ?? (liftedFloating.isEmpty ? ops + pending : EditOp.splitFloating(ops).photo + pending)
         let pixels = viewportPixels
         detailTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 220_000_000)
@@ -1404,7 +1444,8 @@ final class EditorModel {
         }
         // 只取光影和颜色时，AI 图的清晰度用不上，按标准尺寸要就够了，省钱。
         if aiToneOnly, started == .ai { endpoint.hires = false }
-        let ops = self.ops
+        // 文字、贴纸这些装饰不发给 AI，只发照片本身。
+        let ops = liftedFloating.isEmpty ? self.ops : EditOp.splitFloating(self.ops).photo
         aiError = nil
         aiResult = nil
         aiHasResult = false

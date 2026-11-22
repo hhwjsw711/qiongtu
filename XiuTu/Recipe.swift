@@ -107,7 +107,7 @@ struct EditRecipe: Codable {
         case .mosaic:
             return RecipeStep(title: "马赛克", detail: "", symbol: "checkerboard.rectangle", action: nil)
         case .overlay:
-            return RecipeStep(title: "文字 / 贴纸", detail: "", symbol: "textformat", action: nil)
+            return RecipeStep(title: "文字 / 贴纸 / 形状", detail: "", symbol: "textformat", action: nil)
         case .doodle:
             return RecipeStep(title: "涂鸦", detail: "", symbol: "scribble.variable", action: nil)
         case .liquify:

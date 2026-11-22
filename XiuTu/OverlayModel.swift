@@ -80,6 +80,54 @@ enum OverlayAlign: String, CaseIterable, Identifiable {
     }
 }
 
+/// 形状的种类。
+enum GraphicKind: String, CaseIterable, Identifiable {
+    case rect, ellipse, polygon, star, heart, arrow, bubble
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rect: return "矩形"
+        case .ellipse: return "圆形"
+        case .polygon: return "多边形"
+        case .star: return "星形"
+        case .heart: return "心形"
+        case .arrow: return "箭头"
+        case .bubble: return "气泡"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .rect: return "rectangle.fill"
+        case .ellipse: return "circle.fill"
+        case .polygon: return "hexagon.fill"
+        case .star: return "star.fill"
+        case .heart: return "heart.fill"
+        case .arrow: return "arrowshape.right.fill"
+        case .bubble: return "bubble.left.fill"
+        }
+    }
+}
+
+/// 一个形状（方块、圆、多边形……）：画在自己的位图里，和文字、贴纸一样可以拖动、缩放、旋转。
+struct GraphicStyle: Equatable {
+    var kind: GraphicKind = .rect
+    /// 高 / 宽。
+    var aspect: CGFloat = 1
+    /// 圆角，0...1（矩形、多边形、气泡）。
+    var corner: CGFloat = 0
+    /// 切角大小，0...0.5（矩形）。
+    var cut: CGFloat = 0
+    /// 切哪几个角：左上 1、右上 2、右下 4、左下 8。
+    var cutCorners = 0
+    /// 多边形的边数 / 星形的角数。
+    var sides = 6
+    /// 是否填充颜色（不填充就只剩描边）。
+    var fill = true
+}
+
 /// 图片贴纸用的位图。按"是不是同一张图"来比较。
 struct OverlayImage: Equatable {
     let cg: CGImage
@@ -96,6 +144,8 @@ struct OverlayItem: Identifiable, Equatable {
     var isSticker = false
     /// 图片贴纸。不为空时画这张图，text 只是个占位。
     var image: OverlayImage? = nil
+    /// 形状。不为空时画这个形状（颜色用 color），text 只是个占位。
+    var graphic: GraphicStyle? = nil
     /// 中心点，归一化坐标，原点在左上角。
     var center = CGPoint(x: 0.5, y: 0.5)
     /// 字号（图片贴纸是宽度），相对于图片宽度。
@@ -153,6 +203,7 @@ struct OverlayItem: Identifiable, Equatable {
     static let imagePlaceholder = "\u{FFFC}"
 
     var isImage: Bool { image != nil }
+    var isGraphic: Bool { graphic != nil }
 
     /// 只保留会影响"画出来长什么样"的部分：位置和角度清零。用来判断要不要重新渲染。
     var appearance: OverlayItem {

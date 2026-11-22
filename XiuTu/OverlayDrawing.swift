@@ -48,6 +48,7 @@ enum OverlayDrawing {
     static func layout(_ item: OverlayItem, fontSize fs: CGFloat) -> Layout? {
         guard fs >= 1 else { return nil }
         if let image = item.image { return imageLayout(item, image: image.cg, width: fs) }
+        if let graphic = item.graphic { return graphicLayout(item, graphic, width: fs) }
         guard !item.text.isEmpty else { return nil }
 
         var fakeBold = false
@@ -295,6 +296,8 @@ enum OverlayDrawing {
         }
         if let image = item.image {
             drawImage(image.cg, layout: layout, in: ctx, whole: whole)
+        } else if item.graphic != nil {
+            drawGraphic(layout, in: ctx, whole: whole)
         } else {
             drawText(layout, in: ctx, whole: whole)
         }
@@ -487,5 +490,160 @@ enum OverlayDrawing {
                 vImageTentConvolve_Planar8(&dst, &src, nil, 0, 0, k, k, 0, flags)
             }
         }
+    }
+}
+
+// MARK: - 形状
+
+extension OverlayDrawing {
+    /// 形状的描边粗细（像素）：按短边算。
+    private static func graphicLine(_ item: OverlayItem, _ short: CGFloat) -> CGFloat {
+        item.strokeOn ? short * 0.12 * min(max(item.strokeWidth, 0.05), 1) : 0
+    }
+
+    fileprivate static func graphicLayout(_ item: OverlayItem, _ g: GraphicStyle, width: CGFloat) -> Layout? {
+        let w = max(2, width.rounded())
+        let h = max(2, (w * min(max(g.aspect, 0.05), 8)).rounded())
+        let short = min(w, h)
+        let line = graphicLine(item, short)
+        var margin = line / 2 + 2
+        if item.shadowOn {
+            let o = shadowOffset(item, short, unit: 0.15)
+            margin = max(margin, max(abs(o.width), abs(o.height)) + shadowBlur(item, short, unit: 0.12) * 1.7 + line / 2 + 2)
+        }
+        margin = ceil(margin)
+        let rect = CGRect(x: margin, y: margin, width: w, height: h)
+        return Layout(item: item, fontSize: w, size: CGSize(width: w + margin * 2, height: h + margin * 2),
+                      content: rect, font: nil, fakeBold: false,
+                      boxPath: graphicPath(g, in: rect), boxEvenOdd: false)
+    }
+
+    fileprivate static func drawGraphic(_ layout: Layout, in ctx: CGContext, whole: CGRect) {
+        guard let path = layout.boxPath, let g = layout.item.graphic else { return }
+        let item = layout.item
+        let short = min(layout.content.width, layout.content.height)
+        let line = graphicLine(item, short)
+        let w = Int(whole.width), h = Int(whole.height)
+        if item.shadowOn {
+            let coverage = self.coverage(width: w, height: h) { mask in
+                mask.addPath(path)
+                mask.setFillColor(OverlayColor.white.cgColor())
+                if g.fill { mask.fillPath() }
+                if line > 0 {
+                    mask.addPath(path)
+                    mask.setStrokeColor(OverlayColor.white.cgColor())
+                    mask.setLineWidth(line)
+                    mask.setLineJoin(.round)
+                    mask.strokePath()
+                }
+            }
+            let soft = softened(coverage, width: w, height: h, radius: shadowBlur(item, short, unit: 0.12))
+            let o = shadowOffset(item, short, unit: 0.15)
+            fill(mask: soft, in: ctx, rect: whole.offsetBy(dx: o.width, dy: o.height),
+                 color: item.shadowColor.cgColor(alpha: item.shadowOpacity))
+        }
+        if g.fill {
+            ctx.addPath(path)
+            ctx.setFillColor(item.color.cgColor())
+            ctx.fillPath()
+        }
+        if line > 0 {
+            ctx.addPath(path)
+            ctx.setStrokeColor(item.strokeColor.cgColor())
+            ctx.setLineWidth(line)
+            ctx.setLineJoin(.round)
+            ctx.strokePath()
+        }
+    }
+
+    /// 形状的轮廓。坐标是 Core Graphics 的（y 向上）。
+    static func graphicPath(_ g: GraphicStyle, in r: CGRect) -> CGPath {
+        let short = min(r.width, r.height)
+        switch g.kind {
+        case .rect:
+            return cornerPolygon([CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.maxX, y: r.maxY),
+                                  CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.minX, y: r.minY)],
+                                 radius: g.corner * short / 2, cut: g.cut * short, cutMask: g.cutCorners)
+        case .ellipse:
+            return CGPath(ellipseIn: r, transform: nil)
+        case .polygon:
+            let n = min(max(g.sides, 3), 12)
+            let pts = (0..<n).map { i -> CGPoint in
+                let a = CGFloat.pi / 2 - CGFloat(i) * 2 * .pi / CGFloat(n)
+                return CGPoint(x: r.midX + cos(a) * r.width / 2, y: r.midY + sin(a) * r.height / 2)
+            }
+            return cornerPolygon(pts, radius: g.corner * short / 4, cut: 0, cutMask: 0)
+        case .star:
+            let n = min(max(g.sides, 4), 12)
+            let pts = (0..<(n * 2)).map { i -> CGPoint in
+                let k: CGFloat = i % 2 == 0 ? 1 : 0.45
+                let a = CGFloat.pi / 2 - CGFloat(i) * .pi / CGFloat(n)
+                return CGPoint(x: r.midX + cos(a) * r.width / 2 * k, y: r.midY + sin(a) * r.height / 2 * k)
+            }
+            return cornerPolygon(pts, radius: g.corner * short / 10, cut: 0, cutMask: 0)
+        case .heart:
+            let p = CGMutablePath()
+            // 单位方框里的爱心（y 向上），再拉到 r。
+            p.move(to: CGPoint(x: 0.5, y: 0.02))
+            p.addCurve(to: CGPoint(x: 0.02, y: 0.62), control1: CGPoint(x: 0.25, y: 0.22), control2: CGPoint(x: 0.02, y: 0.4))
+            p.addCurve(to: CGPoint(x: 0.5, y: 0.8), control1: CGPoint(x: 0.02, y: 0.98), control2: CGPoint(x: 0.4, y: 1.0))
+            p.addCurve(to: CGPoint(x: 0.98, y: 0.62), control1: CGPoint(x: 0.6, y: 1.0), control2: CGPoint(x: 0.98, y: 0.98))
+            p.addCurve(to: CGPoint(x: 0.5, y: 0.02), control1: CGPoint(x: 0.98, y: 0.4), control2: CGPoint(x: 0.75, y: 0.22))
+            p.closeSubpath()
+            var t = CGAffineTransform(translationX: r.minX, y: r.minY).scaledBy(x: r.width, y: r.height)
+            return p.copy(using: &t) ?? p
+        case .arrow:
+            let head = min(r.width * 0.45, r.height)
+            let shaft = r.height * 0.42
+            let pts = [CGPoint(x: r.minX, y: r.midY + shaft / 2), CGPoint(x: r.maxX - head, y: r.midY + shaft / 2),
+                       CGPoint(x: r.maxX - head, y: r.maxY), CGPoint(x: r.maxX, y: r.midY),
+                       CGPoint(x: r.maxX - head, y: r.minY), CGPoint(x: r.maxX - head, y: r.midY - shaft / 2),
+                       CGPoint(x: r.minX, y: r.midY - shaft / 2)]
+            return cornerPolygon(pts, radius: g.corner * short / 8, cut: 0, cutMask: 0)
+        case .bubble:
+            // 圆角方框，左下角拖一个小尾巴。
+            let tail = short * 0.22
+            let body = CGRect(x: r.minX, y: r.minY + tail, width: r.width, height: r.height - tail)
+            let rad = max(g.corner, 0.15) * min(body.width, body.height) / 2
+            let p = CGMutablePath()
+            p.addRoundedRect(in: body, cornerWidth: rad, cornerHeight: rad)
+            p.move(to: CGPoint(x: body.minX + body.width * 0.18, y: body.minY + 1))
+            p.addLine(to: CGPoint(x: body.minX + body.width * 0.1, y: r.minY))
+            p.addLine(to: CGPoint(x: body.minX + body.width * 0.34, y: body.minY + 1))
+            p.closeSubpath()
+            return p
+        }
+    }
+
+    /// 多边形：每个角可以圆角，也可以切掉（cutMask 里第 i 位 = 第 i 个角）。
+    private static func cornerPolygon(_ pts: [CGPoint], radius: CGFloat, cut: CGFloat, cutMask: Int) -> CGPath {
+        let n = pts.count
+        let p = CGMutablePath()
+        guard n >= 3 else { return p }
+        func unit(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
+            let d = max(hypot(b.x - a.x, b.y - a.y), 0.0001)
+            return CGPoint(x: (b.x - a.x) / d, y: (b.y - a.y) / d)
+        }
+        func len(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(b.x - a.x, b.y - a.y) }
+        // 从第 0 条边的中点出发，绕一圈。
+        let start = CGPoint(x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2)
+        p.move(to: start)
+        for k in 1...n {
+            let i = k % n
+            let prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n]
+            let maxLen = min(len(prev, cur), len(cur, next)) / 2
+            if cut > 0, cutMask & (1 << i) != 0 {
+                let c = min(cut, maxLen)
+                let a = unit(cur, prev), b = unit(cur, next)
+                p.addLine(to: CGPoint(x: cur.x + a.x * c, y: cur.y + a.y * c))
+                p.addLine(to: CGPoint(x: cur.x + b.x * c, y: cur.y + b.y * c))
+            } else if radius > 0.5 {
+                p.addArc(tangent1End: cur, tangent2End: next, radius: min(radius, maxLen))
+            } else {
+                p.addLine(to: cur)
+            }
+        }
+        p.closeSubpath()
+        return p
     }
 }

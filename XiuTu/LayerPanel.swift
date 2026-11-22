@@ -257,6 +257,14 @@ struct LayerPanel: View {
                     .buttonStyle(PressStyle())
                     .disabled(model.layerState.busy)
                 }
+                // 文字、贴纸、形状也是浮在照片上的一层：点一下转到对应的工具接着改。
+                ForEach(decorations.reversed()) { item in
+                    thumb(title: Self.decorationTitle(item), image: OverlayRenderer.thumbnail(item, fontSize: 30),
+                          selected: false, hidden: false) {
+                        let tool: Tool = item.isGraphic ? .graphic : (item.isSticker ? .sticker : .text)
+                        model.commitTool { model.open(tool, selecting: item.id) }
+                    }
+                }
                 ForEach(model.layerState.layers.reversed()) { layer in
                     thumb(title: layer.name, image: UIImage(cgImage: layer.preview),
                           selected: model.layerState.selectedID == layer.id, hidden: layer.hidden) {
@@ -272,6 +280,21 @@ struct LayerPanel: View {
             .padding(.top, 6).padding(.bottom, 2)
         }
         .padding(.horizontal, -16)
+    }
+
+    /// 历史里所有的文字、贴纸、形状（先加的在前）。
+    private var decorations: [OverlayItem] {
+        model.ops.flatMap { op -> [OverlayItem] in
+            if case .overlay(let items) = op { return items }
+            return []
+        }
+    }
+
+    private static func decorationTitle(_ item: OverlayItem) -> String {
+        if let g = item.graphic { return g.kind.title }
+        if item.isImage { return "贴纸" }
+        if item.isSticker { return item.text }
+        return String(item.text.replacingOccurrences(of: "\n", with: " ").prefix(5))
     }
 
     private func thumb(title: String, image: UIImage?, selected: Bool, hidden: Bool,

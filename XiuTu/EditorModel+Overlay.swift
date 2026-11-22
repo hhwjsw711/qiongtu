@@ -68,6 +68,25 @@ extension EditorModel {
         return item.id
     }
 
+    /// 加一个形状。默认是一条半透明的黑色横条（做字幕条、标签底最常用）。
+    @discardableResult
+    func addGraphic(_ kind: GraphicKind) -> UUID {
+        var item = OverlayItem(text: OverlayItem.imagePlaceholder, isSticker: true)
+        var g = GraphicStyle(kind: kind)
+        switch kind {
+        case .rect: g.aspect = 0.22; item.size = 0.8; item.color = .black; item.opacity = 0.6
+        case .arrow: g.aspect = 0.45; item.size = 0.4; item.color = OverlayColor(1.0, 0.27, 0.27)
+        case .bubble: g.aspect = 0.7; item.size = 0.45; item.color = .white
+        default: g.aspect = 1; item.size = 0.35; item.color = OverlayColor(1.0, 0.84, 0.04)
+        }
+        if kind == .star { g.sides = 5 }
+        item.graphic = g
+        place(&item)
+        overlayItems.append(item)
+        selectedOverlayID = item.id
+        return item.id
+    }
+
     func updateOverlay(_ id: UUID, _ change: (inout OverlayItem) -> Void) {
         guard let i = overlayItems.firstIndex(where: { $0.id == id }) else { return }
         change(&overlayItems[i])

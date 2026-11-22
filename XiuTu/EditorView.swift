@@ -62,7 +62,7 @@ enum MainTab: String, CaseIterable, Identifiable {
             }
         case .deco:
             return [
-                MenuEntry(tool: .sticker), MenuEntry(tool: .text), MenuEntry(tool: .doodle), MenuEntry(tool: .frame),
+                MenuEntry(tool: .sticker), MenuEntry(tool: .text), MenuEntry(tool: .graphic), MenuEntry(tool: .doodle), MenuEntry(tool: .frame),
                 MenuEntry(tool: .backdrop), MenuEntry(tool: .mark), MenuEntry(tool: .mosaic),
             ]
         case .ai:
@@ -314,7 +314,7 @@ struct EditorView: View {
         switch model.tool {
         case .some(.crop):
             CropCanvas(model: model)
-        case .some(.text), .some(.sticker):
+        case .some(.text), .some(.sticker), .some(.graphic):
             OverlayCanvas(model: model) { id in editingTextID = id }
         case .some(.beauty):
             ZoomableCanvas(image: model.shownImage, handlers: nil, focus: model.focusRect,
@@ -466,6 +466,7 @@ struct EditorView: View {
         case .mosaic: MosaicPanel(model: model)
         case .text: TextPanel(model: model, onAdd: addText)
         case .sticker: StickerPanel(model: model)
+        case .graphic: GraphicPanel(model: model)
         case .ai: AIPanel(model: model, editPrompt: { editingPrompt = true }, openSettings: { showSettings = true })
         case .beauty: BeautyPanel(model: model, openSettings: { showSettings = true })
         case .liquify: LiquifyPanel(model: model)
