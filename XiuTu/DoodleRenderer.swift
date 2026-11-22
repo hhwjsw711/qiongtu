@@ -293,8 +293,15 @@ enum DoodleRenderer {
         // 只在这一笔附近画：整笔半透明时要开一个临时图层，范围小才快。
         let reach: CGFloat
         switch stroke.brush {
-        case .neon, .number, .arrow, .arrowPen, .sparkles: reach = w * 5 + 4
-        default: reach = w * 1.7 + 4
+        case .neon, .number, .arrow, .arrowPen: reach = w * 5 + 4
+        default:
+            if stroke.brush.category == .pattern {
+                // 图案会被散布出去、也会被放大一点：范围按散布算。
+                let j = stroke.jitter ?? DoodleJitter()
+                reach = w * (1.6 + j.scatter * 1.3) * (stroke.brush == .sparkles ? 2.5 : 1) + 4
+            } else {
+                reach = w * 1.7 + 4
+            }
         }
         ctx.saveGState()
         defer { ctx.restoreGState() }
@@ -304,6 +311,11 @@ enum DoodleRenderer {
             ctx.setBlendMode(.destinationOut)
             strokeLine(ctx, flatten(raw, step: w * 0.1).pts, width: w, color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
             return
+        }
+        // 妆容笔：只落在对应的五官上，边缘羽化。范围外一点都不画。
+        if !stroke.region.isEmpty {
+            guard let (rect, mask) = regionMask(stroke, size: size) else { return }
+            ctx.clip(to: rect, mask: mask)
         }
         let opacity = min(max(stroke.opacity, 0), 1)
         let layered = opacity < 0.999
@@ -358,6 +370,48 @@ enum DoodleRenderer {
         ctx.addLines(between: [tip, left, notch, right])
         ctx.closePath()
         ctx.drawPath(using: .fillStroke)
+    }
+
+    private static let maskCache: NSCache<NSString, Box> = {
+        let c = NSCache<NSString, Box>()
+        c.totalCostLimit = 32 * 1024 * 1024
+        return c
+    }()
+
+    /// 妆容笔范围的灰度蒙版（白 = 能画），只覆盖范围外接矩形那一块。返回画布坐标里的矩形和蒙版。
+    private static func regionMask(_ stroke: DoodleStroke, size: CGSize) -> (CGRect, CGImage)? {
+        let long = max(size.width, size.height)
+        let feather = max(stroke.feather * long, 1)
+        let all = stroke.region.flatMap { $0.flatMap { $0 } }.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) }
+        guard !all.isEmpty else { return nil }
+        let rect = bounds(all).insetBy(dx: -feather * 2, dy: -feather * 2).integral
+            .intersection(CGRect(origin: .zero, size: size))
+        guard rect.width >= 1, rect.height >= 1 else { return nil }
+        let key = "\(stroke.seed)-\(Int(size.width))x\(Int(size.height))" as NSString
+        if let hit = maskCache.object(forKey: key) { return (rect, hit.image) }
+        let w = Int(rect.width), h = Int(rect.height)
+        guard let gray = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                   space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        // 不翻转坐标：蒙版第 0 行对应范围的最上面，clip 进翻转过的画布时正好对上。
+        gray.setFillColor(gray: 1, alpha: 1)
+        for shape in stroke.region {
+            let path = CGMutablePath()
+            for ring in shape where ring.count >= 3 {
+                path.addLines(between: ring.map { CGPoint(x: $0.x * size.width - rect.minX, y: $0.y * size.height - rect.minY) })
+                path.closeSubpath()
+            }
+            gray.addPath(path)
+            gray.fillPath(using: .evenOdd)
+        }
+        guard let hard = gray.makeImage() else { return nil }
+        let ci = CIImage(cgImage: hard).clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: feather])
+            .cropped(to: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let soft = Renderer.shared.context.createCGImage(ci, from: ci.extent, format: .L8,
+                                                               colorSpace: CGColorSpaceCreateDeviceGray()) else { return nil }
+        maskCache.setObject(Box(soft), forKey: key, cost: w * h)
+        return (rect, soft)
     }
 
     private static func softGradient(_ color: DoodleColor, flow: CGFloat, hardness: CGFloat) -> CGGradient? {
@@ -534,79 +588,193 @@ enum DoodleRenderer {
             strokeLine(ctx, pts, width: w * 0.45, color: color.mixed(with: .white, 0.8).cg())
 
         case .eyeliner:
-            // 实心细线，起笔渐粗，收笔拉出一个尖。
+            // 起笔渐粗，收笔拉出一个尖；边缘略带一点晕开，不是硬邦邦的实线。
             let total = length(pts)
             let head = min(w * 4, total * 0.2), tail = min(w * 8, total * 0.35)
-            ctx.setFillColor(cg)
+            guard let gradient = softGradient(color, flow: 0.45, hardness: 0.55) else { return }
             for s in walk(pts, line.t, spacing: w * 0.1) {
                 var f: CGFloat = 1
                 if head > 0, s.s < head { f *= 0.2 + 0.8 * s.s / head }
                 if tail > 0, total - s.s < tail { f *= 0.06 + 0.94 * (total - s.s) / tail }
-                fillCircle(ctx, s.p, radius: max(w * 0.5 * f, 0.3))
+                softDab(ctx, gradient, at: s.p, radius: max(w * 0.6 * f, 0.4))
             }
 
         case .brow, .eyeshadow, .blush, .lip, .glow:
             // 妆容：边缘发虚的小圆点一个个叠上去，像刷子带着粉扫过，不是一条硬边的线。
             let flow: CGFloat, hardness: CGFloat
             switch stroke.brush {
-            case .brow: (flow, hardness) = (0.35, 0.3)
-            case .eyeshadow: (flow, hardness) = (0.14, 0)
-            case .blush: (flow, hardness) = (0.1, 0)
-            case .lip: (flow, hardness) = (0.4, 0.55)
-            default: (flow, hardness) = (0.12, 0)
+            case .brow: (flow, hardness) = (0.2, 0.12)
+            case .eyeshadow: (flow, hardness) = (0.08, 0)
+            case .blush: (flow, hardness) = (0.06, 0)
+            case .lip: (flow, hardness) = (0.24, 0.3)
+            default: (flow, hardness) = (0.07, 0)
             }
             guard let gradient = softGradient(color, flow: flow, hardness: hardness) else { return }
             for s in walk(pts, line.t, spacing: w * 0.15) {
                 softDab(ctx, gradient, at: s.p, radius: w * 0.5)
             }
 
-        case .stars, .hearts, .sparkles, .bubbles:
-            for s in walk(pts, line.t, spacing: w * 1.25) {
-                let scale = rng.range(0.55, 1.15)
-                let across = rng.range(-0.35, 0.35) * w
-                let c = CGPoint(x: s.p.x - sin(s.angle) * across, y: s.p.y + cos(s.angle) * across)
-                let radius = w * 0.5 * scale
-                let alpha = rng.range(0.85, 1)
-                switch stroke.brush {
-                case .stars:
-                    ctx.setFillColor(color.cg(alpha))
-                    ctx.addPath(starPath(center: c, radius: radius, inner: 0.42, points: 5, rotation: rng.range(-0.6, 0.6)))
-                    ctx.fillPath()
-                case .hearts:
-                    ctx.setFillColor(color.cg(alpha))
-                    ctx.addPath(heartPath(center: c, radius: radius, rotation: rng.range(-0.45, 0.45)))
-                    ctx.fillPath()
-                case .sparkles:
-                    let rotation = rng.range(-0.25, 0.25)
-                    let big = rng.unit() < 0.7
-                    let r = big ? radius : radius * 0.45
-                    ctx.saveGState()
-                    ctx.setShadow(offset: .zero, blur: r * 0.9, color: color.cg())
-                    ctx.setFillColor(color.mixed(with: .white, 0.85).cg(alpha))
-                    ctx.addPath(starPath(center: c, radius: r, inner: 0.2, points: 4, rotation: rotation))
-                    ctx.fillPath()
-                    // 旁边再带一颗小光点。
-                    let d = CGPoint(x: c.x + rng.range(-0.9, 0.9) * radius, y: c.y + rng.range(-0.9, 0.9) * radius)
-                    fillCircle(ctx, d, radius: max(radius * rng.range(0.06, 0.14), 0.4))
-                    ctx.restoreGState()
-                default:
-                    ctx.setStrokeColor(color.cg(alpha))
-                    ctx.setLineWidth(max(radius * 0.13, 0.5))
-                    ctx.setLineCap(.round)
-                    ctx.strokeEllipse(in: CGRect(x: c.x - radius, y: c.y - radius, width: radius * 2, height: radius * 2))
-                    ctx.setFillColor(color.cg(alpha * 0.18))
-                    fillCircle(ctx, c, radius: radius)
-                    // 左上角一小段高光。
-                    ctx.setStrokeColor(DoodleColor.white.cg(alpha * 0.9))
-                    ctx.beginPath()
-                    ctx.addArc(center: c, radius: radius * 0.62, startAngle: .pi * 1.05, endAngle: .pi * 1.4, clockwise: false)
-                    ctx.strokePath()
+        case .stars, .hearts, .sparkles, .bubbles, .petals, .leaves, .raindrops, .snowflakes, .notes:
+            let j = stroke.jitter ?? DoodleJitter()
+            let copies = max(1, Int(j.count.rounded()))
+            for s in walk(pts, line.t, spacing: w * max(j.spacing, 0.2)) {
+                for _ in 0..<copies {
+                    // 散布：沿着路线和垂直路线两个方向都随机挪开。
+                    let across = rng.range(-1, 1) * j.scatter * w
+                    let along = (copies > 1 ? rng.range(-1, 1) : rng.range(-0.3, 0.3)) * j.scatter * w
+                    let c = CGPoint(x: s.p.x + cos(s.angle) * along - sin(s.angle) * across,
+                                    y: s.p.y + sin(s.angle) * along + cos(s.angle) * across)
+                    let scale = 1 - j.size * rng.unit() * 0.75 + j.size * 0.15
+                    let spin = rng.range(-1, 1) * .pi * j.angle
+                    stamp(stroke.brush, at: c, radius: w * 0.5 * scale, spin: spin, color: color, rng: &rng, in: ctx)
                 }
             }
 
         default:
             strokeLine(ctx, pts, width: w, color: cg)
         }
+    }
+
+    /// 图案笔的一个图案。spin = 这一个随机转的角度。
+    private static func stamp(_ brush: DoodleBrush, at c: CGPoint, radius: CGFloat, spin: CGFloat, color: DoodleColor,
+                              rng: inout DoodleRandom, in ctx: CGContext) {
+        let alpha = rng.range(0.85, 1)
+        switch brush {
+        case .stars:
+            ctx.setFillColor(color.cg(alpha))
+            ctx.addPath(starPath(center: c, radius: radius, inner: 0.42, points: 5, rotation: spin))
+            ctx.fillPath()
+        case .hearts:
+            ctx.setFillColor(color.cg(alpha))
+            ctx.addPath(heartPath(center: c, radius: radius, rotation: spin))
+            ctx.fillPath()
+        case .sparkles:
+            let big = rng.unit() < 0.7
+            let r = big ? radius : radius * 0.45
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: r * 0.9, color: color.cg())
+            ctx.setFillColor(color.mixed(with: .white, 0.85).cg(alpha))
+            ctx.addPath(starPath(center: c, radius: r, inner: 0.2, points: 4, rotation: spin * 0.4))
+            ctx.fillPath()
+            // 旁边再带一颗小光点。
+            let d = CGPoint(x: c.x + rng.range(-0.9, 0.9) * radius, y: c.y + rng.range(-0.9, 0.9) * radius)
+            fillCircle(ctx, d, radius: max(radius * rng.range(0.06, 0.14), 0.4))
+            ctx.restoreGState()
+        case .bubbles:
+            ctx.setStrokeColor(color.cg(alpha))
+            ctx.setLineWidth(max(radius * 0.13, 0.5))
+            ctx.setLineCap(.round)
+            ctx.strokeEllipse(in: CGRect(x: c.x - radius, y: c.y - radius, width: radius * 2, height: radius * 2))
+            ctx.setFillColor(color.cg(alpha * 0.18))
+            fillCircle(ctx, c, radius: radius)
+            // 左上角一小段高光。
+            ctx.setStrokeColor(DoodleColor.white.cg(alpha * 0.9))
+            ctx.beginPath()
+            ctx.addArc(center: c, radius: radius * 0.62, startAngle: .pi * 1.05, endAngle: .pi * 1.4, clockwise: false)
+            ctx.strokePath()
+        case .petals:
+            // 樱花花瓣：尖头带一个小缺口，颜色深浅略有不同，根部更深一点。
+            let tint = color.mixed(with: .white, rng.range(0, 0.35))
+            let path = petalPath(center: c, radius: radius, rotation: spin + rng.range(-0.6, 0.6))
+            ctx.saveGState()
+            ctx.addPath(path)
+            ctx.clip()
+            let colors = [color.mixed(with: DoodleColor(r: 0.85, g: 0.3, b: 0.45), 0.35).cg(alpha), tint.cg(alpha)] as CFArray
+            if let g = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.6]) {
+                ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: radius * 1.1,
+                                       options: [.drawsAfterEndLocation])
+            }
+            ctx.restoreGState()
+        case .leaves:
+            let leafColor = color.mixed(with: DoodleColor(r: 0.55, g: 0.2, b: 0.05), rng.range(0, 0.4))
+            let rot = spin + rng.range(-0.8, 0.8)
+            ctx.setFillColor(leafColor.cg(alpha))
+            ctx.addPath(leafPath(center: c, radius: radius, rotation: rot))
+            ctx.fillPath()
+            // 叶脉。
+            ctx.setStrokeColor(leafColor.mixed(with: .black, 0.35).cg(alpha * 0.7))
+            ctx.setLineWidth(max(radius * 0.06, 0.4))
+            ctx.move(to: CGPoint(x: c.x - cos(rot) * radius * 1.05, y: c.y - sin(rot) * radius * 1.05))
+            ctx.addLine(to: CGPoint(x: c.x + cos(rot) * radius * 0.9, y: c.y + sin(rot) * radius * 0.9))
+            ctx.strokePath()
+        case .raindrops:
+            // 水滴：上尖下圆，半透明，左上一点高光。
+            let path = dropPath(center: c, radius: radius * 0.8, rotation: spin * 0.3)
+            ctx.setFillColor(color.cg(alpha * 0.45))
+            ctx.addPath(path)
+            ctx.fillPath()
+            ctx.setStrokeColor(color.mixed(with: .white, 0.5).cg(alpha * 0.9))
+            ctx.setLineWidth(max(radius * 0.07, 0.4))
+            ctx.addPath(path)
+            ctx.strokePath()
+            ctx.setFillColor(DoodleColor.white.cg(alpha * 0.85))
+            fillCircle(ctx, CGPoint(x: c.x - radius * 0.22, y: c.y + radius * 0.05), radius: max(radius * 0.13, 0.4))
+        case .snowflakes:
+            // 六个瓣，每瓣带两对小枝。
+            ctx.setStrokeColor(color.cg(alpha))
+            ctx.setLineWidth(max(radius * 0.1, 0.5))
+            ctx.setLineCap(.round)
+            for i in 0..<6 {
+                let a = spin + CGFloat(i) * .pi / 3
+                let tip = CGPoint(x: c.x + cos(a) * radius, y: c.y + sin(a) * radius)
+                ctx.move(to: c)
+                ctx.addLine(to: tip)
+                for k in [0.45, 0.72] as [CGFloat] {
+                    let base = CGPoint(x: c.x + cos(a) * radius * k, y: c.y + sin(a) * radius * k)
+                    let twig = radius * (1 - k) * 0.7
+                    for side in [-1, 1] as [CGFloat] {
+                        let b = a + side * 0.75
+                        ctx.move(to: base)
+                        ctx.addLine(to: CGPoint(x: base.x + cos(b) * twig, y: base.y + sin(b) * twig))
+                    }
+                }
+            }
+            ctx.strokePath()
+        case .notes:
+            let glyph = ["♪", "♫", "♩", "♬"][Int(rng.unit() * 4) % 4]
+            ctx.saveGState()
+            ctx.translateBy(x: c.x, y: c.y)
+            ctx.rotate(by: spin * 0.5)
+            drawText(glyph, center: .zero, fontSize: radius * 2.2, color: color.cg(alpha), in: ctx)
+            ctx.restoreGState()
+        default:
+            break
+        }
+    }
+
+    /// 樱花花瓣：根部窄、尖头宽，尖头中间一个小缺口。
+    private static func petalPath(center: CGPoint, radius: CGFloat, rotation: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -1, y: 0))
+        path.addCurve(to: CGPoint(x: 0.85, y: -0.55), control1: CGPoint(x: -0.4, y: -0.75), control2: CGPoint(x: 0.4, y: -0.8))
+        path.addLine(to: CGPoint(x: 0.7, y: 0))
+        path.addLine(to: CGPoint(x: 0.85, y: 0.55))
+        path.addCurve(to: CGPoint(x: -1, y: 0), control1: CGPoint(x: 0.4, y: 0.8), control2: CGPoint(x: -0.4, y: 0.75))
+        path.closeSubpath()
+        var t = CGAffineTransform(translationX: center.x, y: center.y).rotated(by: rotation).scaledBy(x: radius, y: radius)
+        return path.copy(using: &t) ?? path
+    }
+
+    /// 两头尖的叶子。
+    private static func leafPath(center: CGPoint, radius: CGFloat, rotation: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -1.05, y: 0))
+        path.addCurve(to: CGPoint(x: 1, y: 0), control1: CGPoint(x: -0.5, y: -0.8), control2: CGPoint(x: 0.5, y: -0.6))
+        path.addCurve(to: CGPoint(x: -1.05, y: 0), control1: CGPoint(x: 0.5, y: 0.6), control2: CGPoint(x: -0.5, y: 0.8))
+        path.closeSubpath()
+        var t = CGAffineTransform(translationX: center.x, y: center.y).rotated(by: rotation).scaledBy(x: radius, y: radius * 0.85)
+        return path.copy(using: &t) ?? path
+    }
+
+    /// 水滴：尖头朝上（y 朝下的坐标里是 -y）。
+    private static func dropPath(center: CGPoint, radius: CGFloat, rotation: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: -1.4))
+        path.addCurve(to: CGPoint(x: 0, y: 0.9), control1: CGPoint(x: 0.5, y: -0.6), control2: CGPoint(x: 1.2, y: 0.9))
+        path.addCurve(to: CGPoint(x: 0, y: -1.4), control1: CGPoint(x: -1.2, y: 0.9), control2: CGPoint(x: -0.5, y: -0.6))
+        path.closeSubpath()
+        var t = CGAffineTransform(translationX: center.x, y: center.y).rotated(by: rotation).scaledBy(x: radius, y: radius)
+        return path.copy(using: &t) ?? path
     }
 
     private static func starPath(center: CGPoint, radius: CGFloat, inner: CGFloat, points: Int, rotation: CGFloat) -> CGPath {

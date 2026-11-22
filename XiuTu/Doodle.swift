@@ -78,7 +78,7 @@ enum DoodleCategory: String, CaseIterable, Identifiable {
 enum DoodleBrush: String, CaseIterable, Identifiable {
     case pen, arrowPen, marker, highlighter, pencil, calligraphy, crayon, cloud, spray, dashed, rainbow, neon
     case brow, eyeliner, eyeshadow, blush, lip, glow
-    case stars, hearts, sparkles, bubbles
+    case stars, hearts, sparkles, bubbles, petals, leaves, raindrops, snowflakes, notes
     case arrow, line, rect, ellipse, bar, number, spot
     case eraser
 
@@ -108,6 +108,11 @@ enum DoodleBrush: String, CaseIterable, Identifiable {
         case .hearts: return "爱心"
         case .sparkles: return "闪光"
         case .bubbles: return "泡泡"
+        case .petals: return "樱花"
+        case .leaves: return "落叶"
+        case .raindrops: return "雨滴"
+        case .snowflakes: return "雪花"
+        case .notes: return "音符"
         case .arrow: return "箭头"
         case .line: return "直线"
         case .rect: return "方框"
@@ -126,7 +131,7 @@ enum DoodleBrush: String, CaseIterable, Identifiable {
             return .pen
         case .brow, .eyeliner, .eyeshadow, .blush, .lip, .glow:
             return .makeup
-        case .stars, .hearts, .sparkles, .bubbles:
+        case .stars, .hearts, .sparkles, .bubbles, .petals, .leaves, .raindrops, .snowflakes, .notes:
             return .pattern
         default:
             return nil
@@ -173,7 +178,7 @@ enum DoodleBrush: String, CaseIterable, Identifiable {
         case .cloud, .spray: return 3.2
         case .eyeshadow, .glow: return 3.5
         case .blush: return 7
-        case .stars, .hearts, .sparkles, .bubbles: return 3.2
+        case .stars, .hearts, .sparkles, .bubbles, .petals, .leaves, .raindrops, .snowflakes, .notes: return 3.2
         case .bar: return 1
         case .number: return 1
         case .spot: return 1
@@ -186,11 +191,12 @@ enum DoodleBrush: String, CaseIterable, Identifiable {
         switch self {
         case .highlighter: return 0.45
         case .marker: return 0.9
-        case .brow: return 0.65
-        case .eyeshadow: return 0.55
-        case .blush: return 0.45
-        case .lip: return 0.7
-        case .glow: return 0.5
+        case .brow: return 0.5
+        case .eyeliner: return 0.75
+        case .eyeshadow: return 0.45
+        case .blush: return 0.35
+        case .lip: return 0.55
+        case .glow: return 0.4
         case .bar: return 0.4
         default: return 1
         }
@@ -205,6 +211,10 @@ enum DoodleBrush: String, CaseIterable, Identifiable {
         case .blush: return DoodleColor(r: 0.95, g: 0.5, b: 0.45)
         case .lip: return DoodleColor(r: 0.86, g: 0.3, b: 0.45)
         case .glow: return .white
+        case .petals: return DoodleColor(r: 1.0, g: 0.72, b: 0.8)
+        case .leaves: return DoodleColor(r: 0.9, g: 0.48, b: 0.15)
+        case .raindrops: return DoodleColor(r: 0.72, g: 0.88, b: 1.0)
+        case .snowflakes: return .white
         default: return nil
         }
     }
@@ -224,6 +234,7 @@ enum DoodleBrush: String, CaseIterable, Identifiable {
         case .hearts: return DoodleColor(r: 1.0, g: 0.35, b: 0.5)
         case .sparkles: return DoodleColor(r: 0.55, g: 0.8, b: 1.0)
         case .bubbles: return DoodleColor(r: 0.6, g: 0.9, b: 1.0)
+        case .notes: return DoodleColor(r: 1.0, g: 0.84, b: 0.04)
         default: return defaultColor ?? .white
         }
     }
@@ -242,6 +253,26 @@ struct DoodleStroke: Equatable {
     var seed: UInt64 = 0
     /// 序号圆点上的数字。
     var number = 0
+    /// 图案笔的随机分布；nil = 默认值。
+    var jitter: DoodleJitter? = nil
+    /// 妆容笔只画在这些范围里（五官）。每一项是一块：第一圈是外轮廓，后面的是挖掉的洞。归一化坐标。
+    var region: [[[CGPoint]]] = []
+    /// 范围边缘的羽化宽度（以图片长边为 1）。
+    var feather: CGFloat = 0
+}
+
+/// 图案笔的随机分布（像 Photoshop 画笔的散布、间距、大小抖动）。
+struct DoodleJitter: Equatable {
+    /// 间距：相邻两个图案隔多远，按笔的粗细算。
+    var spacing: CGFloat = 1.25
+    /// 散布：图案离开手指路线多远，按笔的粗细算。
+    var scatter: CGFloat = 0.35
+    /// 大小随机 0...1。
+    var size: CGFloat = 0.5
+    /// 角度随机 0...1（1 = 随便转）。
+    var angle: CGFloat = 0.2
+    /// 每个落点放几个图案。
+    var count: CGFloat = 1
 }
 
 /// 涂鸦 / 标记：画在图上的笔画，作为编辑历史里的一步。

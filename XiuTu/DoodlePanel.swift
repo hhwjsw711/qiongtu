@@ -101,6 +101,11 @@ struct DoodlePanel: View {
     var body: some View {
         let state = model.doodleState
         VStack(spacing: 10) {
+            if let note = state.note {
+                Text(note)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(red: 1, green: 0.45, blue: 0.4))
+            }
             HStack(spacing: 5) {
                 ForEach(DoodleCategory.allCases) { category in
                     Chip(title: category.title, selected: state.category == category) {
@@ -121,13 +126,35 @@ struct DoodlePanel: View {
                     model.doodleClear()
                 }
             }
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 DoodleSlider(title: "大小", value: $model.doodleState.size, range: 2...40)
                 DoodleSlider(title: "浓度", value: $model.doodleState.opacity, range: 0.1...1)
                     .opacity(state.erasing ? 0.35 : 1)
                     .disabled(state.erasing)
+                Button { model.setDoodleSmooth(!state.smooth) } label: {
+                    Text("圆润")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(state.smooth ? Color.black : Color.white)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(state.smooth ? Theme.accent : Theme.chip, in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            DoodleColorRow(color: $model.doodleState.color)
+            if state.category == .pattern {
+                HStack(alignment: .top, spacing: 10) {
+                    DoodleRoundButton(symbol: "slider.horizontal.3", active: state.showJitter, label: "图案分布") {
+                        model.doodleState.showJitter.toggle()
+                    }
+                    if state.showJitter {
+                        jitterSliders
+                    } else {
+                        DoodleColorRow(color: $model.doodleState.color)
+                    }
+                }
+            } else {
+                DoodleColorRow(color: $model.doodleState.color)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(state.category.brushes) { brush in
@@ -143,6 +170,21 @@ struct DoodlePanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 4)
+    }
+
+    /// 图案笔的分布：间距、散布、大小差、角度、数量。
+    private var jitterSliders: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 12) {
+                DoodleSlider(title: "间距", value: $model.doodleState.jitter.spacing, range: 0.3...4)
+                DoodleSlider(title: "散布", value: $model.doodleState.jitter.scatter, range: 0...3)
+            }
+            HStack(spacing: 12) {
+                DoodleSlider(title: "大小差", value: $model.doodleState.jitter.size, range: 0...1)
+                DoodleSlider(title: "角度", value: $model.doodleState.jitter.angle, range: 0...1)
+                DoodleSlider(title: "数量", value: $model.doodleState.jitter.count, range: 1...5)
+            }
+        }
     }
 
     private func brushTile(_ brush: DoodleBrush, selected: Bool) -> some View {

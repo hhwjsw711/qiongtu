@@ -19,6 +19,16 @@ struct DoodleState {
     var runtime: DoodleRuntime?
     /// 放大后渲染高清贴片用的那份笔画；笔画没变就一直是同一份，画好的那层可以复用。
     var pending = DoodleParams()
+    /// 自动圆润：手指抬起后把这一笔修顺（画圈变圆、近似直线拉直）。
+    var smooth = UserDefaults.standard.object(forKey: "doodle.smooth") as? Bool ?? true
+    /// 图案笔的随机分布。
+    var jitter = DoodleJitter()
+    /// 面板上显示分布滑条（代替颜色那一行）。
+    var showJitter = false
+    /// 识别到的人脸（妆容笔用）；nil = 还在识别。
+    var faces: [FaceInfo]?
+    /// 出错时的一句话（比如没找到人脸）。
+    var note: String?
 
     var canUndo: Bool { !strokes.isEmpty }
     var canRedo: Bool { !redo.isEmpty }
@@ -36,6 +46,15 @@ extension EditorModel {
         }
         if let base = basePreview { state.runtime = DoodleRuntime(size: base.extent.size) }
         doodleState = state
+        guard tool == .doodle, let base = basePreview else { return }
+        // 妆容笔要知道五官在哪：进来就在后台找脸。
+        Task { [weak self] in
+            let faces = await Task.detached(priority: .userInitiated) { () -> [FaceInfo] in
+                guard let cg = Renderer.shared.cgImage(base) else { return [] }
+                return FaceDetector.detect(in: cg)
+            }.value
+            self?.doodleState.faces = faces
+        }
     }
 
     /// 点 ✓ 时要写进历史的那一步；没画东西返回 nil。
@@ -61,6 +80,23 @@ extension EditorModel {
         var stroke = DoodleStroke(brush: brush, points: [point], width: width, color: state.color,
                                   opacity: brush == .eraser ? 1 : state.opacity,
                                   seed: UInt64.random(in: 1...UInt64.max))
+        if brush.category == .makeup {
+            // 妆容笔只画在对应的五官上；没找到脸就不画。
+            guard let faces = state.faces else {
+                doodleState.note = "还在识别人脸"
+                return
+            }
+            let region = DoodleFaceRegion.region(for: brush, faces: faces, size: runtime.size)
+            guard !region.shapes.isEmpty else {
+                doodleState.note = "没找到人脸"
+                return
+            }
+            stroke.region = region.shapes
+            stroke.feather = region.feather
+        } else if brush.category == .pattern {
+            stroke.jitter = state.jitter
+        }
+        if doodleState.note != nil { doodleState.note = nil }
         if brush == .number {
             stroke.number = state.strokes.filter { $0.brush == .number }.count + 1
         } else if brush.isShape {
@@ -86,7 +122,7 @@ extension EditorModel {
 
     /// 手指抬起。
     func doodleStrokeEnded() {
-        guard let runtime = doodleState.runtime, let stroke = runtime.active else { return }
+        guard let runtime = doodleState.runtime, var stroke = runtime.active else { return }
         runtime.active = nil
         var keep = true
         if stroke.brush.isShape, stroke.brush != .number, stroke.points.count >= 2 {
@@ -98,6 +134,9 @@ extension EditorModel {
         }
         // 还什么都没画的时候，橡皮擦的这一笔也不用记。
         if stroke.brush == .eraser, runtime.committedImage == nil { keep = false }
+        if keep, doodleState.smooth, !stroke.brush.isShape, stroke.brush != .eraser {
+            stroke.points = DoodleSmooth.process(stroke.points, size: runtime.size)
+        }
         if keep {
             runtime.commit(stroke)
             var state = doodleState
@@ -160,6 +199,11 @@ extension EditorModel {
         if let color = brush.defaultColor { state.color = color }
         if let category = brush.category { state.category = category }
         doodleState = state
+    }
+
+    func setDoodleSmooth(_ on: Bool) {
+        doodleState.smooth = on
+        UserDefaults.standard.set(on, forKey: "doodle.smooth")
     }
 
     private func doodleRender() {
