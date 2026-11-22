@@ -38,8 +38,9 @@ struct MakeupPanel: View {
     @ViewBuilder
     private func header(_ state: MakeupState) -> some View {
         let tabs = state.category.tabs
-        if !tabs.isEmpty || (state.category.isLocal && state.faces.count > 1) {
+        if !tabs.isEmpty || (state.category.isLocal && state.faces.count > 1) || state.category == .look {
             HStack(spacing: 10) {
+                if state.category == .look { GenderToggle() }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 18) {
                         ForEach(tabs.indices, id: \.self) { index in

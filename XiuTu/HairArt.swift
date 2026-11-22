@@ -5,7 +5,7 @@ import Foundation
 /// 只用 Core Graphics；画出来是整张矩形图，圆角由用它的地方裁。
 enum HairArt {
     static func image(for title: String, size: CGSize = CGSize(width: 136, height: 168), scale: CGFloat = 2) -> CGImage? {
-        guard let build = styles[title] else { return nil }
+        guard let build = styles[title] ?? MalePresets.hairArtAlias[title].flatMap({ styles[$0] }) else { return nil }
         let pw = Int((size.width * scale).rounded()), ph = Int((size.height * scale).rounded())
         guard pw > 0, ph > 0,
               let ctx = CGContext(data: nil, width: pw, height: ph, bitsPerComponent: 8, bytesPerRow: 0, space: space,

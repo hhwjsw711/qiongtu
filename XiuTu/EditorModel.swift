@@ -1684,7 +1684,7 @@ final class EditorModel {
     /// 对当前显示的这个风格重新生成一次（会再调用一次接口）。
     func regenerateFaceAI() {
         if beautyStyle == BeautyStyle.favorite.id { return runFavoriteFace(force: true) }
-        guard let style = BeautyStyle.all.first(where: { $0.id == beautyStyle }) else { return }
+        guard let style = BeautyStyle.named(beautyStyle) else { return }
         runFaceAI(style, force: true)
     }
 
@@ -1692,7 +1692,7 @@ final class EditorModel {
     func retryAI() {
         if tool == .beauty {
             if beautyStyle == BeautyStyle.favorite.id { return runFavoriteFace(force: true) }
-            if let style = BeautyStyle.all.first(where: { $0.id == beautyStyle }) { runFaceAI(style, force: true) }
+            if let style = BeautyStyle.named(beautyStyle) { runFaceAI(style, force: true) }
         } else {
             runAI()
         }

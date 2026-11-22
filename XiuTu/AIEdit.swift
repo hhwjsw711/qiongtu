@@ -232,6 +232,7 @@ enum AIPresetGroup: String, CaseIterable, Identifiable {
         case .creative:
             return CreativeKind.all
         case .body:
+            if GenderSetting.shared.isMale { return MalePresets.body }
             return [
                 AIPreset(title: "瘦身", symbol: "figure.stand", prompt: "让身材稍微苗条一些，比例自然，不要改变姿势、长相和背景。"),
                 AIPreset(title: "长腿", symbol: "figure.walk", prompt: "把腿稍微拉长一些，让身材比例更修长，保持自然，背景不要变形。"),
@@ -240,6 +241,7 @@ enum AIPresetGroup: String, CaseIterable, Identifiable {
                 AIPreset(title: "肤色提亮", symbol: "sun.max", prompt: "全身肤色提亮、更均匀通透，保持自然，不要过曝。"),
             ]
         case .hairStyle:
+            if GenderSetting.shared.isMale { return MalePresets.hairStyles }
             return [
                 AIPreset(title: "长直发", symbol: "scissors", prompt: "把发型换成又长又直、柔顺垂坠的长直发。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
                 AIPreset(title: "大波浪", symbol: "scissors", prompt: "把发型换成蓬松有光泽的大波浪长卷发。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
@@ -261,13 +263,9 @@ enum AIPresetGroup: String, CaseIterable, Identifiable {
                 AIPreset(title: "齐刘海", symbol: "scissors", prompt: "把发型换成整齐的齐刘海，其余头发不变。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
                 AIPreset(title: "中分", symbol: "scissors", prompt: "把发型换成中分，露出额头。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
                 AIPreset(title: "侧分", symbol: "scissors", prompt: "把发型换成三七侧分，发根蓬松。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
-                AIPreset(title: "寸头", symbol: "scissors", prompt: "把发型换成干净利落的男士寸头。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
-                AIPreset(title: "背头", symbol: "scissors", prompt: "把发型换成向后梳的男士背头。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
-                AIPreset(title: "纹理烫", symbol: "scissors", prompt: "把发型换成蓬松有层次的男士纹理烫。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
-                AIPreset(title: "微分碎盖", symbol: "scissors", prompt: "把发型换成韩式微分碎盖男士短发。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
-                AIPreset(title: "狼尾", symbol: "scissors", prompt: "把发型换成后颈留长的狼尾发型。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
             ]
         case .hairColor:
+            if GenderSetting.shared.isMale { return MalePresets.hairColors }
             return [
                 AIPreset(title: "自然黑", symbol: "paintpalette", prompt: "把头发染成自然的黑色。只改头发的颜色，发型、发丝走向和长度都不变；颜色要像真的染出来的，有深浅层次和自然的高光，发根过渡自然。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true, tint: 0x1A1A1C),
                 AIPreset(title: "深棕", symbol: "paintpalette", prompt: "把头发染成深棕色。只改头发的颜色，发型、发丝走向和长度都不变；颜色要像真的染出来的，有深浅层次和自然的高光，发根过渡自然。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true, tint: 0x3B2A20),
@@ -289,6 +287,7 @@ enum AIPresetGroup: String, CaseIterable, Identifiable {
                 AIPreset(title: "渐变", symbol: "circle.lefthalf.filled", prompt: "把头发染成从发根深色到发尾浅色的自然渐变。发型不变。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
             ]
         case .hairCare:
+            if GenderSetting.shared.isMale { return MalePresets.hairCare }
             return [
                 AIPreset(title: "顺滑柔亮", symbol: "wand.and.stars", prompt: "让头发更顺滑、有光泽，去掉毛躁和分叉，发型和发色不变。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),
                 AIPreset(title: "去毛躁", symbol: "wind", prompt: "去掉头顶和发丝边缘翘起来的碎发和毛躁，轮廓干净，发型和发色不变。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop: true),

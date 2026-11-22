@@ -31,7 +31,7 @@ extension EditorModel {
         var list = [none(selected: m?.isEmpty ?? true, slot: "look") { face in
             face.lip = nil; face.brow = nil; face.eye = EyeMakeup(); face.contour = ContourMakeup(); face.blush = nil
         }]
-        for look in MakeupCatalog.looks {
+        for look in MakeupCatalog.currentLooks {
             list.append(MakeupOption(id: look.name, title: look.name, selected: state.pick("look") == look.name,
                                      apply: { $0.apply(look, strength: 1) }, preview: { $0.apply(look, strength: 1) },
                                      slot: "look"))

@@ -526,7 +526,10 @@ struct ShapePanel: View {
                     .disabled(state.body == nil)
                     .opacity(state.body == nil ? 0.35 : 1)
                 }
-                ForEach(ShapeAI.looks) { look in
+                GenderToggle()
+                    .padding(.top, 14)
+                    .padding(.horizontal, 4)
+                ForEach(GenderSetting.shared.isMale ? MalePresets.shapeLooks : ShapeAI.looks) { look in
                     FeatureTile(symbol: look.symbol, title: look.title, badge: "AI") {
                         model.startAIPreset(look, group: .body)
                     }

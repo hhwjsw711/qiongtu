@@ -297,7 +297,7 @@ extension EditorModel {
         func remember(_ slot: String) { makeupState.strengths[state.faceIndex, default: [:]][slot] = v }
         switch state.category {
         case .look:
-            guard let name = state.pick("look"), let look = MakeupCatalog.looks.first(where: { $0.name == name }) else { return }
+            guard let name = state.pick("look"), let look = (MakeupCatalog.currentLooks + MakeupCatalog.looks + MakeupCatalog.maleLooks).first(where: { $0.name == name }) else { return }
             remember("look")
             changeMakeup { $0.apply(look, strength: v / 0.8) }
         case .lip:

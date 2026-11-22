@@ -127,6 +127,12 @@ struct AIPanel: View {
                     }
                 }
             }
+            if [.body, .hairStyle, .hairColor, .hairCare].contains(model.aiGroup) {
+                HStack(spacing: 8) {
+                    GenderToggle()
+                    Spacer(minLength: 0)
+                }
+            }
             if model.aiGroup == .master {
                 HStack(spacing: 8) {
                     Chip(title: "大师构图", symbol: "viewfinder", selected: model.aiMasterCompose) { model.aiMasterCompose = true }
