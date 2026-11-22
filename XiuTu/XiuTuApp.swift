@@ -40,7 +40,8 @@ struct RootView: View {
                      startManga: { path.append(.manga) },
                      startRaw: { path.append(.rawPicker) },
                      startHistory: { path.append(.history) },
-                     startFavorite: { path.append(.favoriteFace) })
+                     startFavorite: { path.append(.favoriteFace) },
+                     openFile: { url in path.append(.editorFile(url)) })
                 .navigationDestination(for: Route.self) { route in
                     switch route {
                     case .picker(let tool):
@@ -139,11 +140,15 @@ struct HomeView: View {
     var startRaw: () -> Void = {}
     var startHistory: () -> Void = {}
     var startFavorite: () -> Void = {}
+    /// 自动拼好的长图直接进编辑器。
+    var openFile: (URL) -> Void = { _ in }
 
     @State private var showSettings = false
+    @State private var stitching = false
+    @State private var stitchError: String?
     private let history = HistoryStore.shared
     private let settings = AISettings.shared
-    private let shortcuts: [Tool] = [.crop, .filter, .adjust, .mosaic]
+    private let shortcuts: [Tool] = [.crop, .filter, .adjust]
 
     var body: some View {
         ZStack {
@@ -178,6 +183,18 @@ struct HomeView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    Button(action: autoStitch) {
+                        VStack(spacing: 10) {
+                            Image(systemName: "rectangle.stack")
+                                .font(.system(size: 26))
+                                .frame(height: 32)
+                            Text("自动拼图").font(.system(size: 13))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stitching)
                 }
 
                 Button { start(nil) } label: {
@@ -236,6 +253,31 @@ struct HomeView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .overlay {
+            if stitching {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+                    .padding(24)
+                    .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .alert(stitchError ?? "", isPresented: Binding(get: { stitchError != nil }, set: { if !$0 { stitchError = nil } })) {
+            Button("好", role: .cancel) {}
+        }
+    }
+
+    /// 找最近一组连续截图拼成长图，拼好直接进编辑器。
+    private func autoStitch() {
+        stitching = true
+        Task {
+            let result = await AutoStitchLoader.run()
+            stitching = false
+            switch result {
+            case .success(let url): openFile(url)
+            case .failure(let failure): stitchError = failure.message
+            }
+        }
     }
 
     private func featureButton(symbol: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
