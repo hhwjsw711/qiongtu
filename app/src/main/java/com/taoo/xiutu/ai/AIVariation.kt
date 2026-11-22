@@ -39,16 +39,19 @@ object AIVariation {
     )
 
     /** 第几次重新生成（从 1 开始）对应的附加要求。 */
-    fun clause(group: AIPresetGroup, round: Int, recompose: Boolean = false): String {
+    fun clause(group: AIPresetGroup, round: Int, recompose: Boolean = false, hasPerson: Boolean = true): String {
         val pool = when (group) {
             AIPresetGroup.CREATIVE -> creative
             AIPresetGroup.MASTER, AIPresetGroup.CAMERA, AIPresetGroup.LIGHT -> tone
             else -> general
         }
         val picks = pool.shuffled().take(if (group == AIPresetGroup.CREATIVE) 3 else 2).toMutableList()
-        if (recompose) picks += "取景换一种：景别、机位或人物在画面里的位置和上一版不同"
+        if (recompose) {
+            picks += if (hasPerson) "取景换一种：景别、机位或人物在画面里的位置和上一版不同" else "取景换一种：景别、机位或画面重心和上一版不同"
+        }
         val keep = when {
             group == AIPresetGroup.CREATIVE -> "人物要认得出是同一个人，画面比例不变。"
+            group == AIPresetGroup.MASTER && recompose && !hasPerson -> "还是同一个地方，画面里不要出现任何人。"
             group == AIPresetGroup.MASTER && recompose -> "人物长相不变，还是同一个地方。"
             group in listOf(
                 AIPresetGroup.FIX, AIPresetGroup.REMOVE, AIPresetGroup.COMPOSE, AIPresetGroup.BODY,
