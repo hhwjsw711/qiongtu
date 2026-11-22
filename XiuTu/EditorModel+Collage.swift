@@ -25,6 +25,13 @@ struct CollageState {
     var swapTo: Int?
 }
 
+/// 拼接时可以推的边。
+enum StitchEdge: Hashable {
+    case start
+    case seam(Int)
+    case end
+}
+
 /// 模板列表里的一项：模板 + 用哪个画布比例。
 struct CollageChoice: Identifiable {
     let layout: CollageLayout
@@ -79,6 +86,41 @@ extension EditorModel {
     func renderCollage() {
         guard let base = basePreview else { return }
         showLive(collageState.params.render(base: base, preview: true))
+    }
+
+    // MARK: 拼接裁剪
+
+    /// 拼接时推一条边。start = 第一张图的开头，seam(i) = 第 i 张和下一张之间的接缝，end = 最后一张的结尾。
+    /// moved 是从按下到现在沿拼接方向挪了多少（以图的宽 / 高为 1；竖拼向下、横拼向右为正），from 是按下时的图。
+    func collageStitchPush(_ edge: StitchEdge, moved: CGFloat, from start: [CollagePicture]) {
+        var pics = start
+        let full = collageState.params.stitchFullLengths(reference: collageReference)
+        guard pics.count == full.count, !pics.isEmpty else { return }
+        func clampStart(_ i: Int, _ v: CGFloat) { pics[i].cropStart = min(max(v, 0), 0.95 - pics[i].cropEnd) }
+        func clampEnd(_ i: Int, _ v: CGFloat) { pics[i].cropEnd = min(max(v, 0), 0.95 - pics[i].cropStart) }
+        switch edge {
+        case .start:
+            clampStart(0, start[0].cropStart + moved / full[0])
+        case .end:
+            let i = pics.count - 1
+            clampEnd(i, start[i].cropEnd - moved / full[i])
+        case .seam(let i):
+            guard i + 1 < pics.count else { return }
+            let up = i, down = i + 1
+            if moved > 0 {
+                // 往下推：先把上面那张裁掉的放回来，放完了再裁下面那张的开头。
+                let giveBack = min(moved, start[up].cropEnd * full[up])
+                clampEnd(up, start[up].cropEnd - giveBack / full[up])
+                clampStart(down, start[down].cropStart + (moved - giveBack) / full[down])
+            } else {
+                let m = -moved
+                let giveBack = min(m, start[down].cropStart * full[down])
+                clampStart(down, start[down].cropStart - giveBack / full[down])
+                clampEnd(up, start[up].cropEnd + (m - giveBack) / full[up])
+            }
+        }
+        collageState.params.pictures = pics
+        renderCollage()
     }
 
     // MARK: 模板

@@ -9,6 +9,8 @@ struct CollageCanvas: View {
 
     @State private var stitchZoom: CGFloat = 1
     @State private var zoomStart: CGFloat?
+    /// 推拼接的边：按下时的图和每个单位在屏幕上多长。
+    @State private var pushStart: (pictures: [CollagePicture], unit: CGFloat)?
 
     static let space = "collageCanvas"
 
@@ -109,6 +111,9 @@ struct CollageCanvas: View {
                                 .onTapGesture { model.collageTap(index) }
                                 .position(x: frames[index].midX, y: frames[index].midY)
                         }
+                        ForEach(stitchHandles(frames, vertical: vertical), id: \.edge) { handle in
+                            pushHandle(handle, vertical: vertical, size: size, reference: reference)
+                        }
                     }
                     .frame(width: size.width, height: size.height)
                 }
@@ -139,6 +144,64 @@ struct CollageCanvas: View {
                 }
                 .onEnded { _ in zoomStart = nil }
         )
+    }
+}
+
+extension CollageCanvas {
+    struct StitchHandle {
+        let edge: StitchEdge
+        let point: CGPoint
+    }
+
+    /// 每条可以推的边放一个把手：第一张的开头、每两张之间、最后一张的结尾。
+    func stitchHandles(_ frames: [CGRect], vertical: Bool) -> [StitchHandle] {
+        guard let first = frames.first, let last = frames.last else { return [] }
+        var out: [StitchHandle] = []
+        out.append(StitchHandle(edge: .start, point: vertical ? CGPoint(x: first.midX, y: first.minY + 14)
+                                                              : CGPoint(x: first.minX + 14, y: first.midY)))
+        for i in 0..<(frames.count - 1) {
+            let a = frames[i]
+            out.append(StitchHandle(edge: .seam(i), point: vertical ? CGPoint(x: a.midX, y: a.maxY)
+                                                                     : CGPoint(x: a.maxX, y: a.midY)))
+        }
+        out.append(StitchHandle(edge: .end, point: vertical ? CGPoint(x: last.midX, y: last.maxY - 14)
+                                                            : CGPoint(x: last.maxX - 14, y: last.midY)))
+        return out
+    }
+
+    func pushHandle(_ handle: StitchHandle, vertical: Bool, size: CGSize, reference: CGSize) -> some View {
+        let symbol: String
+        switch handle.edge {
+        case .start: symbol = vertical ? "arrow.up" : "arrow.left"
+        case .seam: symbol = vertical ? "arrow.up.arrow.down" : "arrow.left.arrow.right"
+        case .end: symbol = vertical ? "arrow.down" : "arrow.right"
+        }
+        return Image(systemName: symbol)
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(.black)
+            .frame(width: vertical ? 46 : 26, height: vertical ? 26 : 46)
+            .background(Theme.accent, in: Capsule())
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+            .frame(width: 60, height: 44)
+            .contentShape(Rectangle())
+            .position(handle.point)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        if pushStart == nil {
+                            // 屏幕上一个单位（图的宽 / 高）有多长：按下那一刻量一次，拖动中画布变长变短也不跟着变。
+                            let full = model.collageState.params.stitchFullLengths(reference: reference)
+                            let kept = zip(full, model.collageState.params.pictures).map { $0 * $1.keep }.reduce(0, +)
+                            let gap = model.collageState.params.stitchGap * CGFloat(max(full.count - 1, 0))
+                            let along = vertical ? size.height : size.width
+                            pushStart = (model.collageState.params.pictures, along / max(kept + gap, 0.0001))
+                        }
+                        guard let start = pushStart else { return }
+                        let t = vertical ? value.translation.height : value.translation.width
+                        model.collageStitchPush(handle.edge, moved: t / max(start.unit, 0.0001), from: start.pictures)
+                    }
+                    .onEnded { _ in pushStart = nil }
+            )
     }
 }
 

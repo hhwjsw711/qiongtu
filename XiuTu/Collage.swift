@@ -206,6 +206,12 @@ struct CollagePicture: Identifiable {
     var flip = false
     /// 顺时针转了几个 90°。
     var quarterTurns = 0
+    /// 拼接时沿拼接方向裁掉的比例：开头（竖拼 = 上面，横拼 = 左边）和结尾。
+    var cropStart: CGFloat = 0
+    var cropEnd: CGFloat = 0
+
+    /// 拼接时留下的比例。
+    var keep: CGFloat { max(1 - cropStart - cropEnd, 0.05) }
 }
 
 /// 拼图：把当前这张图和另外几张图拼成一张，作为编辑历史里的一步。
@@ -249,7 +255,8 @@ struct CollageParams {
 
     /// 只有正在编辑的这一张、没加别的图：等于没拼。
     var isIdentity: Bool {
-        pictures.isEmpty || (pictures.count == 1 && pictures[0].isBase)
+        pictures.isEmpty || (pictures.count == 1 && pictures[0].isBase
+            && (mode == .template || (pictures[0].cropStart == 0 && pictures[0].cropEnd == 0)))
     }
 
     /// 模板里放不下的图有几张。
@@ -270,12 +277,17 @@ struct CollageParams {
         return CGSize(width: max(size.width, 1), height: max(size.height, 1))
     }
 
-    /// 拼接时每张图沿拼接方向的"自然长度"：以另一边为 1。
-    private func stitchLengths(reference: CGSize) -> [CGFloat] {
+    /// 拼接时每张图沿拼接方向的"自然长度"（没裁过的整张）：以另一边为 1。
+    func stitchFullLengths(reference: CGSize) -> [CGFloat] {
         pictures.indices.map { i in
             let s = pictureSize(i, reference: reference)
             return vertical ? s.height / s.width : s.width / s.height
         }
+    }
+
+    /// 拼接时每张图裁过之后沿拼接方向的长度。
+    private func stitchLengths(reference: CGSize) -> [CGFloat] {
+        zip(stitchFullLengths(reference: reference), pictures).map { $0 * $1.keep }
     }
 
     /// 拼出来的画布有多大（像素）。reference = 正在编辑的图的尺寸，决定输出的清晰度。
@@ -409,7 +421,16 @@ struct CollageParams {
             }
         case .stitch:
             for (index, rect) in rects.enumerated() {
-                guard let img = source(index) else { continue }
+                guard var img = source(index) else { continue }
+                // 沿拼接方向裁掉两头（Core Image 的 y 朝上：竖拼时"上面"在 y 大的那头）。
+                let p = pictures[index]
+                if p.cropStart > 0 || p.cropEnd > 0 {
+                    let e = img.extent
+                    let keepRect = vertical
+                        ? CGRect(x: e.minX, y: e.minY + e.height * p.cropEnd, width: e.width, height: e.height * p.keep)
+                        : CGRect(x: e.minX + e.width * p.cropStart, y: e.minY, width: e.width * p.keep, height: e.height)
+                    img = Self.atOrigin(img.cropped(to: keepRect.integral))
+                }
                 let target = CGRect(x: rect.minX, y: canvas.height - rect.maxY, width: rect.width, height: rect.height)
                 out = Self.fill(img, into: target, offset: .zero, zoom: 1, radius: 0, hq: !preview)
                     .composited(over: out)
