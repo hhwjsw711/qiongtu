@@ -177,9 +177,9 @@ enum AIPresetGroup: String, CaseIterable, Identifiable {
             ]
         case .compose:
             return [
-                AIPreset(title: "重新构图", symbol: "viewfinder", prompt: "你是一位摄影大师。判断这张照片的构图问题（主体位置、留白、头顶和脚下的空间、画面是否歪斜、边缘是否有干扰），然后重新构图，让主体更突出、画面更平衡。人物长相、姿势和服装不变，画面比例不变。"),
-                AIPreset(title: "三分法", symbol: "squareshape.split.3x3", prompt: "按三分法重新构图：把主体放到三分线的交点附近，视线前方留出空间。人物和场景内容不变，画面比例不变。"),
-                AIPreset(title: "主体居中", symbol: "dot.viewfinder", prompt: "重新构图，让主体在画面正中、左右对称平衡。人物和场景内容不变，画面比例不变。"),
+                AIPreset(title: "重新构图", symbol: "viewfinder", prompt: "你是一位摄影大师。判断这张照片的构图问题（主体位置、留白、头顶和脚下的空间、画面是否歪斜、边缘是否有干扰），然后重新构图，让主体更突出、画面更平衡。构图只是取景的要求，画面里不要画出任何网格、辅助线、取景框、文字或标记。人物长相、姿势和服装不变，画面比例不变。"),
+                AIPreset(title: "三分法", symbol: "squareshape.split.3x3", prompt: "重新取景，让主体不在正中间：把主体放在画面偏左或偏右、大约三分之一宽度的位置，地平线放在偏上或偏下大约三分之一高度处，人物视线朝向的那一侧留出更多空间。构图只是取景的要求，画面里不要画出任何网格、辅助线、取景框、文字或标记。人物和场景内容不变，画面比例不变。"),
+                AIPreset(title: "主体居中", symbol: "dot.viewfinder", prompt: "重新构图，让主体在画面正中、左右对称平衡。构图只是取景的要求，画面里不要画出任何网格、辅助线、取景框、文字或标记。人物和场景内容不变，画面比例不变。"),
                 AIPreset(title: "拉正", symbol: "level", prompt: "把歪斜的地平线和建筑的垂直线拉正，校正镜头畸变，其他不变。"),
                 AIPreset(title: "虚化背景", symbol: "drop", prompt: "保持人物清晰，把背景虚化成大光圈镜头的效果，过渡自然，发丝边缘不要出错。"),
             ]
