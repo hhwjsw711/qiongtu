@@ -309,13 +309,28 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
         lastPrompt = basePrompt
         ellipse = null
         resultReframed = false
-        val recomposed = if (group == AIPresetGroup.MASTER && masterCompose) MasterCompose.prompt(basePrompt, presetTitle) else null
-        if (recomposed != null) {
+        val composeBase = model.base
+        if (group == AIPresetGroup.MASTER && masterCompose && composeBase != null &&
+            MasterCompose.prompt(basePrompt, presetTitle, hasPerson = true) != null
+        ) {
             // 大师构图：整张交给 AI 重新取景，不看涂抹；结果和原图对不齐，按换过构图处理。
-            val rp = if (regenRound > 0) recomposed + AIVariation.clause(group, regenRound, recompose = true) else recomposed
+            // 先在本机看看照片里有没有人：没人的场景照用场景版指令，免得 AI 照着"人物居中"之类的描述加个人进去。
+            val round = regenRound
+            val title = presetTitle
             frame = null
             toneOnly = false
-            launchAI(rp, emptyList(), null, guidance = false, identity = true, recomposed = true)
+            error = null
+            running = true
+            started = System.currentTimeMillis()
+            val gen = ++generation
+            job = model.scope.launch {
+                val hasPerson = withContext(Dispatchers.Default) { MasterCompose.hasPerson(composeBase) }
+                if (closed || gen != generation) return@launch
+                running = false
+                val recomposed = MasterCompose.prompt(basePrompt, title, hasPerson) ?: return@launch
+                val rp = if (round > 0) recomposed + AIVariation.clause(AIPresetGroup.MASTER, round, recompose = true, hasPerson = hasPerson) else recomposed
+                launchAI(rp, emptyList(), null, guidance = false, identity = hasPerson, recomposed = true)
+            }
             return
         }
         val p = if (regenRound > 0) basePrompt + AIVariation.clause(group, regenRound) else basePrompt

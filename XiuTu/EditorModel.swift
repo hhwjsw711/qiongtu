@@ -1222,13 +1222,25 @@ final class EditorModel {
         aiLastPrompt = base
         aiEllipse = nil
         aiResultReframed = false
-        if aiGroup == .master, aiMasterCompose, let recomposed = MasterCompose.prompt(base, title: aiPresetTitle) {
+        if aiGroup == .master, aiMasterCompose, MasterCompose.prompt(base, title: aiPresetTitle, hasPerson: true) != nil,
+           let cg = baseUIImage?.cgImage {
             // 大师构图：整张交给 AI 重新取景，不看涂抹；结果和原图对不齐，按换过构图处理。
-            let prompt = aiRegenRound > 0
-                ? recomposed + AIVariation.clause(for: aiGroup, round: aiRegenRound, recompose: true) : recomposed
+            // 先在本机看看照片里有没有人：没人的场景照用场景版指令，免得 AI 照着"人物居中"之类的描述加个人进去。
+            let round = aiRegenRound, title = aiPresetTitle
             aiFrame = nil
             aiToneOnly = false
-            launchAI(prompt: prompt, strokes: [], crop: nil, guidance: false, identity: true, recomposed: true)
+            aiError = nil
+            aiRunning = true
+            aiStarted = Date()
+            Task { [weak self] in
+                let hasPerson = await Task.detached(priority: .userInitiated) { MasterCompose.hasPerson(in: cg) }.value
+                guard let self, self.tool == .ai, self.aiRunning else { return }
+                self.aiRunning = false
+                guard let recomposed = MasterCompose.prompt(base, title: title, hasPerson: hasPerson) else { return }
+                let prompt = round > 0
+                    ? recomposed + AIVariation.clause(for: .master, round: round, recompose: true, hasPerson: hasPerson) : recomposed
+                self.launchAI(prompt: prompt, strokes: [], crop: nil, guidance: false, identity: hasPerson, recomposed: true)
+            }
             return
         }
         let prompt = aiRegenRound > 0 ? base + AIVariation.clause(for: aiGroup, round: aiRegenRound) : base

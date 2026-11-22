@@ -37,7 +37,7 @@ enum AIVariation {
     ]
 
     /// 第几次重新生成（从 1 开始）对应的附加要求。
-    static func clause(for group: AIPresetGroup, round: Int, recompose: Bool = false) -> String {
+    static func clause(for group: AIPresetGroup, round: Int, recompose: Bool = false, hasPerson: Bool = true) -> String {
         let pool: [String]
         switch group {
         case .creative: pool = creative
@@ -45,11 +45,15 @@ enum AIVariation {
         default: pool = general
         }
         var picks = Array(pool.shuffled().prefix(group == .creative ? 3 : 2))
-        if recompose { picks.append("取景换一种：景别、机位或人物在画面里的位置和上一版不同") }
+        if recompose {
+            picks.append(hasPerson ? "取景换一种：景别、机位或人物在画面里的位置和上一版不同" : "取景换一种：景别、机位或画面重心和上一版不同")
+        }
         let keep: String
         switch group {
         case .creative:
             keep = "人物要认得出是同一个人，画面比例不变。"
+        case .master where recompose && !hasPerson:
+            keep = "还是同一个地方，画面里不要出现任何人。"
         case .master where recompose:
             keep = "人物长相不变，还是同一个地方。"
         case .fix, .remove, .compose, .body, .hairStyle, .hairColor, .hairCare:
