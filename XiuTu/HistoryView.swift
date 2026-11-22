@@ -4,6 +4,8 @@ import SwiftUI
 /// 历史图库：App 里留的那份图。可以设密码、批量删除、一键清空。
 struct HistoryView: View {
     var onEdit: (URL) -> Void
+    /// 把某张图的处理步骤套到一张新照片上。
+    var onApply: (UUID) -> Void
     var onClose: () -> Void
 
     private let store = HistoryStore.shared
@@ -66,6 +68,9 @@ struct HistoryView: View {
                 viewing = nil
                 // 等大图收起来再进编辑器。
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onEdit(url) }
+            }, onApply: {
+                viewing = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onApply(item.id) }
             }, onClose: { viewing = nil })
         }
         .sheet(isPresented: $settingPassword) { HistoryPasswordSheet() }
@@ -358,9 +363,12 @@ private struct HistoryPasswordSheet: View {
 struct HistoryViewer: View {
     let item: HistoryItem
     var onEdit: (URL) -> Void
+    var onApply: () -> Void = {}
     var onClose: () -> Void
 
     @State private var image: UIImage?
+    @State private var recipe: EditRecipe?
+    @State private var showSteps = false
     @State private var confirmDelete = false
     @State private var note: String?
 
@@ -396,6 +404,9 @@ struct HistoryViewer: View {
                 }
                 HStack(spacing: 0) {
                     IconTile(symbol: "slider.horizontal.3", title: "编辑") { onEdit(url) }
+                    if recipe != nil {
+                        IconTile(symbol: "list.number", title: "步骤") { showSteps = true }
+                    }
                     IconTile(symbol: "square.and.arrow.down", title: "存到相册") {
                         Task { note = await Self.saveToPhotos(url) ? "已存到相册" : "保存失败，请检查相册权限" }
                     }
@@ -424,7 +435,17 @@ struct HistoryViewer: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showSteps) {
+            if let recipe {
+                RecipeSheet(recipe: recipe) {
+                    showSteps = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { onApply() }
+                }
+                .presentationDetents([.medium, .large])
+            }
+        }
         .task {
+            recipe = HistoryStore.shared.recipe(item.id)
             let url = url
             image = await Task.detached(priority: .userInitiated) {
                 guard let full = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]),

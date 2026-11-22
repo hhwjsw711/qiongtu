@@ -365,6 +365,8 @@ struct AIEdit {
     var reframed = false
     /// 0...1，把 AI 结果过头的锐化压下去，在本机调。
     var soften: CGFloat = 0
+    /// 这一步是怎么发起的（套用到新照片时再跑一遍）；涂抹、融合出来的没有。
+    var recipe: AIRecipe? = nil
 
     /// AI 出图常常锐化过头：和模糊过的自己混一下，边缘的白边和沙沙的纹理就下去了。
     static func softened(_ r: CIImage, amount: CGFloat) -> CIImage {

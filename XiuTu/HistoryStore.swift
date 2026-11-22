@@ -60,14 +60,27 @@ final class HistoryStore {
         folder.appendingPathComponent(id.uuidString + ".thumb.jpg")
     }
 
+    private func recipeURL(_ id: UUID) -> URL {
+        folder.appendingPathComponent(id.uuidString + ".recipe.json")
+    }
+
+    /// 这张图的处理步骤（从修图存进来的才有）。
+    func recipe(_ id: UUID) -> EditRecipe? {
+        guard let data = try? Data(contentsOf: recipeURL(id)) else { return nil }
+        return try? JSONDecoder().decode(EditRecipe.self, from: data)
+    }
+
     private func saveIndex() {
         guard let data = try? JSONEncoder().encode(items) else { return }
         try? data.write(to: folder.appendingPathComponent("index.json"), options: [.atomic, .completeFileProtection])
     }
 
     /// 存一张进来。ext 是 jpg / heic / png。
-    func add(data: Data, ext: String, source: String) async {
+    func add(data: Data, ext: String, source: String, recipe: EditRecipe? = nil) async {
         let id = UUID()
+        if let recipe, !recipe.steps.isEmpty, let json = try? JSONEncoder().encode(recipe) {
+            try? json.write(to: recipeURL(id), options: [.atomic, .completeFileProtection])
+        }
         let file = folder.appendingPathComponent(id.uuidString + "." + ext)
         let thumb = thumbURL(id)
         let size = await Task.detached(priority: .utility) { () -> (Int, Int)? in
@@ -128,6 +141,7 @@ final class HistoryStore {
         for item in items where ids.contains(item.id) {
             try? FileManager.default.removeItem(at: fileURL(item))
             try? FileManager.default.removeItem(at: thumbURL(item.id))
+            try? FileManager.default.removeItem(at: recipeURL(item.id))
             thumbs.removeObject(forKey: item.id as NSUUID)
         }
         items.removeAll { ids.contains($0.id) }

@@ -21,7 +21,7 @@ enum AdjustGroup: String, CaseIterable, Identifiable {
 }
 
 /// 一个滑块对应一项。全部在本机算，不联网。
-enum AdjustKey: String, CaseIterable, Identifiable {
+enum AdjustKey: String, CaseIterable, Identifiable, Codable {
     // 光效
     case brightness, contrast, exposure, lightSense, highlights, shadows, ambiance, fillLight
     // 色彩
@@ -188,7 +188,7 @@ enum HSLColor: Int, CaseIterable, Identifiable {
 }
 
 /// 曲线：总曲线 + 红绿蓝三条。每条是一串控制点（x、y 都是 0...1，x 递增），至少有头尾两个点。
-struct CurveSet: Equatable {
+struct CurveSet: Equatable, Codable {
     static let identity: [CGPoint] = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 1)]
 
     /// 下标：0 = 总曲线（三个通道一起），1 = 红，2 = 绿，3 = 蓝。
@@ -200,7 +200,7 @@ struct CurveSet: Equatable {
 }
 
 /// 色调分离：给暗部和亮部各染一个颜色。
-struct SplitTone: Equatable {
+struct SplitTone: Equatable, Codable {
     /// 色相 0...1。
     var shadowHue: Float = 0.6
     var shadowAmount: Float = 0
@@ -213,7 +213,7 @@ struct SplitTone: Equatable {
 }
 
 /// 局部调色的一个点：只改以它为中心的一个圆里面，边缘渐变过渡。
-struct LocalAdjust: Equatable, Identifiable {
+struct LocalAdjust: Equatable, Identifiable, Codable {
     var id = UUID()
     /// 中心，归一化图片坐标，原点左上角。
     var center: CGPoint
@@ -235,7 +235,10 @@ struct AdjustUI {
     var localID: UUID?
 }
 
-struct AdjustParams: Equatable {
+struct AdjustParams: Equatable, Codable {
+    /// 存配方时只存数值，不存界面状态。
+    private enum CodingKeys: String, CodingKey { case values, hsl, curves, split, locals }
+
     private(set) var values: [AdjustKey: Float] = [:]
     /// HSL：每个颜色的（色相、饱和度、明度），都是 -1...1。下标是 HSLColor.rawValue。
     var hsl = [SIMD3<Float>](repeating: SIMD3<Float>(0, 0, 0), count: HSLColor.allCases.count)

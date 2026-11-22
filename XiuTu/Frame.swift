@@ -4,7 +4,7 @@ import CoreText
 import Foundation
 
 /// 边框、背景里用到的颜色（sRGB，0...1）。
-struct FrameColor: Equatable, Hashable {
+struct FrameColor: Equatable, Hashable, Codable {
     var r: CGFloat
     var g: CGFloat
     var b: CGFloat
@@ -299,7 +299,7 @@ enum FrameKit {
 
 // MARK: - 边框
 
-enum FrameStyle: String, CaseIterable, Identifiable {
+enum FrameStyle: String, CaseIterable, Identifiable, Codable {
     case none, solid, line, double, card, polaroid, film, stamp, magazine
 
     var id: String { rawValue }
@@ -314,7 +314,7 @@ enum FrameStyle: String, CaseIterable, Identifiable {
 
 /// 边框：给照片加一圈边（白边、拍立得、胶片边……），作为编辑历史里的一步。
 /// 所有尺寸都按照片短边的比例算，预览和原图导出的效果一样。
-struct FrameParams: Equatable {
+struct FrameParams: Equatable, Codable {
     var style: FrameStyle = .none
     /// 边框（纸）的颜色。
     var color = FrameColor.white
@@ -501,7 +501,7 @@ struct FramePreset: Identifiable {
 
 // MARK: - 背景
 
-enum BackdropRatio: String, CaseIterable, Identifiable {
+enum BackdropRatio: String, CaseIterable, Identifiable, Codable {
     case original, r1x1, r3x4, r4x3, r4x5, r9x16, r16x9, r2x3, r3x2
 
     var id: String { rawValue }
@@ -536,7 +536,7 @@ enum BackdropRatio: String, CaseIterable, Identifiable {
     }
 }
 
-enum BackdropFill: String, CaseIterable, Identifiable {
+enum BackdropFill: String, CaseIterable, Identifiable, Codable {
     case blur, solid, gradient, checks, dots, stripes
 
     var id: String { rawValue }
@@ -568,7 +568,7 @@ enum BackdropFill: String, CaseIterable, Identifiable {
 
 /// 背景：把照片放到一块更大的画布上（指定比例，背景用模糊的照片、纯色、渐变或图案）。
 /// 照片保持原来的像素不缩小，是画布按比例变大；所有尺寸都是相对值，预览和导出一样。
-struct BackdropParams: Equatable {
+struct BackdropParams: Equatable, Codable {
     var ratio: BackdropRatio = .original
     /// 照片在画布里占多大：1 = 刚好顶满，越小四周留得越多。
     var scale: CGFloat = 1

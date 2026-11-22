@@ -24,6 +24,9 @@ enum Route: Hashable {
     case history
     case favoriteFace
     case draft
+    /// 选一张新照片，套用历史图库里某张图的处理步骤。
+    case recipePicker(UUID)
+    case recipe(assetID: String, historyID: UUID)
 }
 
 struct RootView: View {
@@ -83,7 +86,17 @@ struct RootView: View {
                         }
                     case .history:
                         HistoryView(onEdit: { url in path.append(.editorFile(url)) },
+                                    onApply: { id in path.append(.recipePicker(id)) },
                                     onClose: { path.removeAll() })
+                    case .recipePicker(let id):
+                        PhotoPickerView(
+                            onPick: { asset in path.append(.recipe(assetID: asset, historyID: id)) },
+                            onClose: { if !path.isEmpty { path.removeLast() } }
+                        )
+                    case .recipe(let asset, let id):
+                        EditorView(assetID: asset, recipeID: id, initialTool: nil) {
+                            if !path.isEmpty { path.removeLast() }
+                        }
                     }
                 }
         }

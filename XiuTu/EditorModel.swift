@@ -121,6 +121,11 @@ final class EditorModel {
     var aiToneOnly = false
     /// 最近一次请求的实际用量说明。
     var aiUsageText: String?
+    /// 当前这次 AI 是怎么发起的（存进历史，套用步骤时用）。
+    @ObservationIgnored var aiPendingRecipe: AIRecipe?
+    /// 正在套用别的图的处理步骤：显示的进度，比如"3/7 大师 · 滨田英明"。
+    var recipeStatus: String?
+    @ObservationIgnored var recipeTask: Task<Void, Never>?
 
     // 手动美体（液化）
     var liquify = LiquifyParams()
@@ -302,7 +307,7 @@ final class EditorModel {
         if !initial.isEmpty { await rebuildBase() }
     }
 
-    private func rebuildBase() async {
+    func rebuildBase() async {
         guard let proxy else { return }
         let ops = self.ops
         generation += 1
@@ -471,6 +476,7 @@ final class EditorModel {
         aiSoften = 0
         aiResultFused = false
         aiToneOnly = false
+        aiPendingRecipe = nil
     }
 
     /// 图层融合完：结果放进 AI 修图的结果面板，可以调强度和柔化，点 ✓ 才算数。
@@ -807,8 +813,15 @@ final class EditorModel {
         }
     }
 
+    /// 直接在历史末尾加一步（套用别的图的处理步骤时用）。
+    func appendOp(_ op: EditOp) async {
+        recordUndo()
+        ops.append(op)
+        await rebuildBase()
+    }
+
     /// 改动 ops 之前先记一笔。
-    private func recordUndo() {
+    func recordUndo() {
         undoStates.append(ops)
         redoStates.removeAll()
         revision += 1
@@ -1175,14 +1188,18 @@ final class EditorModel {
         // "只取光影色彩"只属于 AI 修图；美颜要的就是 AI 改过的脸，不能套这个模式。
         // 柔化只给整张重画的结果用；美颜只换脸部那一块，不柔化。
         let soften = tool == .ai && aiFrame == nil && !aiHasRegion ? aiSoften : 0
+        var recipe = tool == .ai && !aiResultFused ? aiPendingRecipe : nil
+        recipe?.strength = aiStrength
+        recipe?.toneOnly = aiToneOnly
+        recipe?.soften = soften
         if aiResultReframed {
-            return AIEdit(result: result, strokes: [], reframed: true, soften: soften)
+            return AIEdit(result: result, strokes: [], reframed: true, soften: soften, recipe: recipe)
         }
         return AIEdit(result: result, strokes: aiStrokes, frame: aiFrame, ellipse: aiEllipse, strength: aiStrength,
-                      toneOnly: aiToneOnly && tool == .ai, soften: soften)
+                      toneOnly: aiToneOnly && tool == .ai, soften: soften, recipe: recipe)
     }
 
-    private func renderAI() {
+    func renderAI() {
         guard let base = basePreview else { return }
         if tool == .beauty {
             let layers = faceLayers()
@@ -1220,6 +1237,10 @@ final class EditorModel {
         // 结果出来后再点同一条：算重新生成，加上这一轮的变化要求。
         aiRegenRound = aiHasResult && base == aiLastPrompt ? aiRegenRound + 1 : 0
         aiLastPrompt = base
+        // 记下怎么发起的：涂抹出来的和原图位置绑定，不能套到别的照片上。
+        aiPendingRecipe = aiHasRegion || base.contains("涂抹区域") ? nil
+            : AIRecipe(group: aiGroup.rawValue, prompt: base, presetTitle: aiPresetTitle, masterCompose: aiMasterCompose,
+                       faceCrop: aiFaceCrop, hairCrop: aiHairCrop, reframe: aiReframe.rawValue)
         aiEllipse = nil
         aiResultReframed = false
         if aiGroup == .master, aiMasterCompose, MasterCompose.prompt(base, title: aiPresetTitle, hasPerson: true) != nil,
@@ -1685,7 +1706,7 @@ final class EditorModel {
             }
             if HistoryStore.shared.enabled {
                 await HistoryStore.shared.add(data: data, ext: options.format == .jpeg ? "jpg" : options.format.rawValue,
-                                              source: "修图")
+                                              source: "修图", recipe: EditRecipe(ops: ops, input: proxy ?? source))
             }
             return true
         } catch {

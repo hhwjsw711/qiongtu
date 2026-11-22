@@ -3,7 +3,7 @@ import UIKit
 
 // MARK: - 裁剪 / 旋转
 
-struct CropParams: Equatable {
+struct CropParams: Equatable, Codable {
     /// 先水平翻转，再顺时针转 quarterTurns 个 90°。
     var flip = false
     var quarterTurns = 0

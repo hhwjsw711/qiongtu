@@ -5,7 +5,7 @@ import simd
 
 /// 即显相纸的规格。尺寸（毫米）是按各种相纸公开的规格取的近似值，
 /// 颜色也是自己调的模拟，都不是任何厂商的官方配置。
-enum InstantFormat: String, CaseIterable, Identifiable {
+enum InstantFormat: String, CaseIterable, Identifiable, Codable {
     case none, polaroid, go, mini, square, wide, spectra, peel, large
 
     var id: String { rawValue }
@@ -69,7 +69,7 @@ enum InstantSurface {
 }
 
 /// "实物"模式下相纸底下的扫描台。
-enum InstantBed: String, CaseIterable, Identifiable {
+enum InstantBed: String, CaseIterable, Identifiable, Codable {
     case white, gray, dark
 
     var id: String { rawValue }
@@ -122,7 +122,7 @@ extension InstantFormat.Spec {
 }
 
 /// 即显胶片的几种色调。和相纸规格分开选。
-enum InstantStock: String, CaseIterable, Identifiable {
+enum InstantStock: String, CaseIterable, Identifiable, Codable {
     case classic, sx70, bold, clear, mono, expired
 
     var id: String { rawValue }
@@ -240,7 +240,7 @@ struct InstantPreset: Identifiable {
 
 /// 拍立得：把照片做成一张即显相纸的样子（按相纸比例裁切、加相纸边、套即显胶片的颜色），作为编辑历史里的一步。
 /// 所有尺寸都是从画面宽度按相纸的毫米比例换算的，预览和原图导出的样子一样。相纸上不加颗粒。
-struct InstantParams: Equatable {
+struct InstantParams: Equatable, Codable {
     var format: InstantFormat = .none
     /// 相纸横过来用：写字的宽边转到右侧。
     var rotated = false

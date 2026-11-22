@@ -118,6 +118,8 @@ struct EditorView: View {
     var layerEdit: LayerEditRequest? = nil
     /// 从草稿箱接着编辑上次没做完的图。
     var restoreDraft = false
+    /// 打开后把历史图库里这张图的处理步骤套到这张照片上。
+    var recipeID: UUID? = nil
     let initialTool: Tool?
     var onClose: () -> Void
 
@@ -157,8 +159,25 @@ struct EditorView: View {
                                 .padding(.top, 6)
                                 .allowsHitTesting(false)
                         }
+                        if let status = model.recipeStatus {
+                            HStack(spacing: 10) {
+                                ProgressView().tint(.black).controlSize(.small)
+                                Text(status)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .lineLimit(1)
+                                Button("停止") { model.stopRecipe() }
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Theme.accent, in: Capsule())
+                            .padding(.top, 6)
+                            .padding(.horizontal, 16)
+                        }
                     }
                 bottom
+                    .disabled(model.recipeStatus != nil)
             }
             .ignoresSafeArea(.keyboard)
             if model.isLoading || model.isBusy || saving {
@@ -213,6 +232,7 @@ struct EditorView: View {
                 await model.load(assetID: assetID)
             }
             if let initialTool { start(initialTool) }
+            if let recipeID, let recipe = HistoryStore.shared.recipe(recipeID) { model.startRecipe(recipe) }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showSave) { SaveSheet(model: model, onSave: save) }
