@@ -244,9 +244,12 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text("裁剪、调色、滤镜、马赛克、文字、贴纸在本机处理。只有 AI 修图会把图片发给你选的服务商。")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.dim)
+                // 点一下打开作者的 X 主页。
+                Link(destination: URL(string: "https://x.com/iam678")!) {
+                    Text("作者X:@iam678")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.dim)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
