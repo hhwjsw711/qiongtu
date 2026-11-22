@@ -4,7 +4,7 @@ import CoreImage
 /// 特效里用 CoreGraphics 画的东西：粒子、光束、光斑、图案。尺寸都按画面长边的比例。
 enum EffectDraw {
     /// 在长边不超过 2048 的透明画布上画，再放大到 size。
-    static func overlay(size: CGSize, seed: UInt64,
+    static func overlay(size: CGSize, seed: UInt64, chaos: CGFloat = 0.5,
                         draw: (CGContext, CGSize, inout EffectRNG) -> Void) -> CIImage? {
         let long = max(size.width, size.height)
         guard long >= 2 else { return nil }
@@ -13,7 +13,7 @@ enum EffectDraw {
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        var rng = EffectRNG(seed: seed)
+        var rng = EffectRNG(seed: seed, chaos: chaos)
         draw(ctx, CGSize(width: w, height: h), &rng)
         guard let cg = ctx.makeImage() else { return nil }
         return CIImage(cgImage: cg)
@@ -364,7 +364,7 @@ enum EffectDraw {
     }
 
     /// 星芒：在画面最亮的几处画出放射状的星芒。
-    static func stars(_ image: CIImage, points: Int) -> CIImage? {
+    static func stars(_ image: CIImage, points: Int, seed: UInt64 = 1, chaos: CGFloat = 0.5) -> CIImage? {
         let e = image.extent
         // 缩成很小的图找亮点；位置是比例，所以预览和原图找到的一样。
         let small = Renderer.shared.downscaled(image, maxDimension: 72)
@@ -407,21 +407,24 @@ enum EffectDraw {
             if picked.allSatisfy({ hypot($0.x - f.x, $0.y - f.y) > 0.08 }) { picked.append(f) }
         }
         guard !picked.isEmpty else { return nil }
-        return overlay(size: e.size, seed: 1) { ctx, size, _ in
+        return overlay(size: e.size, seed: seed, chaos: chaos) { ctx, size, rng in
             let u = max(size.width, size.height)
             for (i, f) in picked.enumerated() {
                 let c = CGPoint(x: CGFloat(f.x) * size.width, y: CGFloat(f.y) * size.height)
                 let len = u * (i == 0 ? 0.17 : 0.1) * CGFloat(0.6 + (f.v - threshold) / max(0.01, 1 - threshold) * 0.4)
-                ray(ctx, c, length: len, points: points)
+                ray(ctx, c, length: len * CGFloat(rng.range(0.8, 1.2)), points: points, rng: &rng)
             }
         }
     }
 
-    private static func ray(_ ctx: CGContext, _ c: CGPoint, length: CGFloat, points: Int) {
+    private static func ray(_ ctx: CGContext, _ c: CGPoint, length: CGFloat, points: Int, rng: inout EffectRNG) {
         let space = CGColorSpace(name: CGColorSpace.sRGB)
+        // 整颗星转一个小角度，每根芒长短不一（随机度越高差得越多）。
+        let turn = CGFloat(rng.range(-0.12, 0.12))
         for i in 0..<points {
-            let a = CGFloat(i) * .pi / CGFloat(points) * 2 + .pi / 4
-            let end = CGPoint(x: c.x + cos(a) * length, y: c.y + sin(a) * length)
+            let a = CGFloat(i) * .pi / CGFloat(points) * 2 + .pi / 4 + turn
+            let each = length * CGFloat(rng.range(0.85, 1.15))
+            let end = CGPoint(x: c.x + cos(a) * each, y: c.y + sin(a) * each)
             let half = length * 0.028
             let n = CGPoint(x: -sin(a) * half, y: cos(a) * half)
             let path = CGMutablePath()

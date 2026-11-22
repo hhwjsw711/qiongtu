@@ -107,7 +107,7 @@ enum EffectKind: String, CaseIterable, Identifiable {
     /// 位置是随机的，可以"换一换"。
     var shuffles: Bool {
         category == .atmosphere || self == .glitch || self == .bokehLight || self == .leafShadow || self == .godRays
-            || self == .rainbow
+            || self == .rainbow || self == .starburst
     }
 
     var defaultStrength: CGFloat {
@@ -167,11 +167,16 @@ enum EffectKind: String, CaseIterable, Identifiable {
 }
 
 /// 一步特效。参数全是相对值，预览和原图一样；随机的东西由 seed 决定。
-struct EffectParams: Equatable {
+struct EffectParams: Equatable, Codable {
+    /// 存配方时不存蒙版：套用到新照片时按新照片重新算。
+    private enum CodingKeys: String, CodingKey { case id, strength, variant, seed, chaos }
+
     var id = ""
     var strength: CGFloat = 0.7
     var variant = 0
     var seed: UInt64 = 7
+    /// 随机度 0.01...1：粒子、光斑、光束的大小、亮度、角度差别有多大。0.5 = 默认。
+    var chaos: CGFloat = 0.5
     /// 主体蒙版（白 = 主体），在进工具时对当时的画面算好。
     var mask: CGImage?
 
@@ -183,7 +188,7 @@ struct EffectParams: Equatable {
     }
 
     static func == (a: EffectParams, b: EffectParams) -> Bool {
-        a.id == b.id && a.strength == b.strength && a.variant == b.variant && a.seed == b.seed && a.mask === b.mask
+        a.id == b.id && a.strength == b.strength && a.variant == b.variant && a.seed == b.seed && a.chaos == b.chaos && a.mask === b.mask
     }
 
     func apply(to image: CIImage) -> CIImage {
@@ -196,7 +201,7 @@ struct EffectParams: Equatable {
         let variants = kind.variants
         let v = variants.isEmpty ? EffectVariant(title: "") : variants[min(max(variant, 0), variants.count - 1)]
         let out = EffectRender.render(kind, image: moved, strength: min(max(strength, 0), 1), variant: v,
-                                      variantIndex: variant, seed: seed, mask: maskCI)
+                                      variantIndex: variant, seed: seed, chaos: chaos, mask: maskCI)
         return out.cropped(to: moved.extent).transformed(by: CGAffineTransform(translationX: e.minX, y: e.minY))
     }
 }

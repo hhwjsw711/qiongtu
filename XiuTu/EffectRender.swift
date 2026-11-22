@@ -4,7 +4,7 @@ import CoreGraphics
 /// 特效的实现。输入的图原点在 (0,0)；mask 已经和图对齐（白 = 主体）。
 enum EffectRender {
     static func render(_ kind: EffectKind, image: CIImage, strength s: CGFloat, variant v: EffectVariant,
-                       variantIndex: Int, seed: UInt64, mask: CIImage?) -> CIImage {
+                       variantIndex: Int, seed: UInt64, chaos: CGFloat, mask: CIImage?) -> CIImage {
         let e = image.extent
         let dim = max(e.width, e.height)
         switch kind {
@@ -44,27 +44,27 @@ enum EffectRender {
             return sunFlare(image, strength: s, color: v)
         case .starburst:
             let points = variantIndex == 1 ? 6 : (variantIndex == 2 ? 8 : 4)
-            guard let overlay = EffectDraw.stars(image, points: points) else { return image }
+            guard let overlay = EffectDraw.stars(image, points: points, seed: seed, chaos: chaos) else { return image }
             return screen(scale(overlay, s), over: image)
         case .godRays:
-            guard let rays = EffectDraw.overlay(size: e.size, seed: seed, draw: { ctx, size, rng in
+            guard let rays = EffectDraw.overlay(size: e.size, seed: seed, chaos: chaos, draw: { ctx, size, rng in
                 EffectDraw.godRays(ctx, size: size, rng: &rng, fromLeft: variantIndex == 0, color: v)
             }) else { return image }
             return screen(scale(blurLow(rays, dim * 0.012), 1.1 * s), over: image)
         case .lightLeak:
             return lightLeak(image, strength: s, color: v)
         case .rainbow:
-            guard let band = EffectDraw.overlay(size: e.size, seed: seed, draw: { ctx, size, rng in
+            guard let band = EffectDraw.overlay(size: e.size, seed: seed, chaos: chaos, draw: { ctx, size, rng in
                 EffectDraw.rainbow(ctx, size: size, rng: &rng)
             }) else { return image }
             return screen(scale(blurLow(band, dim * 0.022), 0.75 * s), over: image)
         case .bokehLight:
-            guard let spots = EffectDraw.overlay(size: e.size, seed: seed, draw: { ctx, size, rng in
+            guard let spots = EffectDraw.overlay(size: e.size, seed: seed, chaos: chaos, draw: { ctx, size, rng in
                 EffectDraw.bokehSpots(ctx, size: size, rng: &rng, color: variantIndex == 2 ? nil : v)
             }) else { return image }
             return screen(scale(blurLow(spots, dim * 0.002), s), over: image)
         case .leafShadow, .blinds:
-            guard let pattern = EffectDraw.overlay(size: e.size, seed: seed, draw: { ctx, size, rng in
+            guard let pattern = EffectDraw.overlay(size: e.size, seed: seed, chaos: chaos, draw: { ctx, size, rng in
                 if kind == .leafShadow {
                     EffectDraw.leafPattern(ctx, size: size, rng: &rng)
                 } else {
@@ -179,7 +179,7 @@ enum EffectRender {
         case .neon:
             return neon(image, strength: s, color: v)
         case .glitch:
-            return glitch(image, strength: s, seed: seed)
+            return glitch(image, strength: s, seed: seed, chaos: chaos)
         case .crt:
             var out = image.clampedToExtent().applyingFilter("CIBumpDistortion", parameters: [
                 kCIInputCenterKey: CIVector(x: e.midX, y: e.midY), kCIInputRadiusKey: dim * 0.75, kCIInputScaleKey: 0.22,
@@ -220,7 +220,7 @@ enum EffectRender {
 
         // MARK: 氛围
         default:
-            guard let overlay = EffectDraw.overlay(size: e.size, seed: seed, draw: { ctx, size, rng in
+            guard let overlay = EffectDraw.overlay(size: e.size, seed: seed, chaos: chaos, draw: { ctx, size, rng in
                 EffectDraw.particles(kind, ctx: ctx, size: size, rng: &rng)
             }) else { return image }
             return scale(overlay, min(1, 0.25 + 0.9 * s)).composited(over: image).cropped(to: e)
@@ -366,11 +366,11 @@ enum EffectRender {
         return FX.mix(image, out.cropped(to: e), t: s)
     }
 
-    private static func glitch(_ image: CIImage, strength s: CGFloat, seed: UInt64) -> CIImage {
+    private static func glitch(_ image: CIImage, strength s: CGFloat, seed: UInt64, chaos: CGFloat) -> CIImage {
         let e = image.extent
         let dim = max(e.width, e.height)
         var out = channelSplit(image, dx: dim * 0.008 * (0.3 + s))
-        var rng = EffectRNG(seed: seed &+ 99)
+        var rng = EffectRNG(seed: seed &+ 99, chaos: chaos)
         let clamped = out.clampedToExtent()
         for _ in 0..<9 {
             let h = e.height * CGFloat(rng.range(0.008, 0.06))
@@ -515,7 +515,13 @@ enum EffectRender {
 struct EffectRNG {
     private var state: UInt64
 
-    init(seed: UInt64) { state = seed &* 0x9E37_79B9_7F4A_7C15 &+ 1 }
+    /// 随机范围放大 / 缩小的倍数：随机度 0.5 = 1 倍（原来的范围），越低越整齐一致，越高差别越大。
+    private let spread: Double
+
+    init(seed: UInt64, chaos: CGFloat = 0.5) {
+        state = seed &* 0x9E37_79B9_7F4A_7C15 &+ 1
+        spread = Double(min(max(chaos, 0.01), 1)) * 2
+    }
 
     mutating func next() -> Double {
         state &+= 0x9E37_79B9_7F4A_7C15
@@ -526,5 +532,11 @@ struct EffectRNG {
         return Double(z >> 11) / Double(1 << 53)
     }
 
-    mutating func range(_ a: Double, _ b: Double) -> Double { a + (b - a) * next() }
+    /// a...b 之间的随机数；随机度改变的是范围的宽窄（中点不变）。原范围全是正数时结果不会小于 a 的三成。
+    mutating func range(_ a: Double, _ b: Double) -> Double {
+        let mid = (a + b) / 2, half = (b - a) / 2 * spread
+        var lo = mid - half
+        if a >= 0 { lo = max(lo, a * 0.3) }
+        return lo + (mid + half - lo) * next()
+    }
 }

@@ -105,6 +105,8 @@ extension EditorModel {
             next.id = kind.id
             next.strength = kind.defaultStrength
             next.variant = 0
+            // 每次选一个随机排布的效果都重新随机一次，不会总是同一个样子。
+            if kind.shuffles { next.seed = UInt64.random(in: 1...UInt64.max) }
         }
         next.mask = kind.usesMask ? effectState.mask : nil
         effectState.params = next
@@ -123,7 +125,13 @@ extension EditorModel {
 
     /// 随机的效果换一种排布。
     func shuffleEffect() {
-        effectState.params.seed &+= 1
+        effectState.params.seed = UInt64.random(in: 1...UInt64.max)
+        renderEffect()
+    }
+
+    /// 随机度 0.01...1。
+    func setEffectChaos(_ value: CGFloat) {
+        effectState.params.chaos = min(max(value, 0.01), 1)
         renderEffect()
     }
 

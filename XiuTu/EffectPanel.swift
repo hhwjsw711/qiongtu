@@ -16,16 +16,14 @@ struct EffectPanel: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Color(red: 1, green: 0.45, blue: 0.4))
             }
-            HStack(spacing: 12) {
-                Text(kind == nil ? "–" : "\(Int((state.params.strength * 100).rounded()))")
-                    .font(.system(size: 15, weight: .semibold))
-                    .monospacedDigit()
-                    .frame(width: 44, alignment: .leading)
-                Slider(value: Binding(get: { Double(state.params.strength) },
-                                      set: { model.setEffectStrength(CGFloat($0)) }), in: 0...1)
+            sliderRow("强度", value: kind == nil ? nil : state.params.strength, range: 0...1) {
+                model.setEffectStrength($0)
             }
             .opacity(kind == nil ? 0.3 : 1)
             .disabled(kind == nil)
+            if let kind, kind.shuffles {
+                sliderRow("随机度", value: state.params.chaos, range: 0.01...1) { model.setEffectChaos($0) }
+            }
 
             variantRow(kind)
 
@@ -86,10 +84,11 @@ struct EffectPanel: View {
                     }
                     if kind.shuffles {
                         Button { model.shuffleEffect() } label: {
-                            Image(systemName: "dice")
-                                .font(.system(size: 14, weight: .semibold))
+                            Label("随机", systemImage: "dice")
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(.white)
-                                .frame(width: 34, height: 30)
+                                .padding(.horizontal, 12)
+                                .frame(height: 30)
                                 .background(Theme.chip, in: Capsule())
                         }
                         .buttonStyle(PressStyle())
@@ -98,6 +97,22 @@ struct EffectPanel: View {
             }
         }
         .frame(height: 32)
+    }
+
+    /// 名字 + 滑条 + 数值（1...100）。
+    private func sliderRow(_ title: String, value: CGFloat?, range: ClosedRange<Double>,
+                           set: @escaping (CGFloat) -> Void) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 44, alignment: .leading)
+            Slider(value: Binding(get: { Double(value ?? 0) }, set: { set(CGFloat($0)) }), in: range)
+            Text(value.map { "\(max(Int(range.lowerBound * 100), Int(($0 * 100).rounded())))" } ?? "–")
+                .font(.system(size: 15, weight: .semibold))
+                .monospacedDigit()
+                .frame(width: 34, alignment: .trailing)
+        }
     }
 
     // MARK: 换天的缩略图：渐变色块 + 图标
