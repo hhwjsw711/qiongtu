@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,7 @@ fun HomeScreen(
     var showSettings by remember { mutableStateOf(false) }
     val shortcuts = listOf(Tool.CROP, Tool.FILTER, Tool.ADJUST)
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
     var stitching by remember { mutableStateOf(false) }
     var stitchError by remember { mutableStateOf<String?>(null) }
@@ -120,6 +122,8 @@ fun HomeScreen(
                 }
                 Icon(sym("chevron.right"), null, tint = Theme.dim, modifier = Modifier.size(14.dp))
             }
+            // 点一下打开作者的 X 主页。
+            Text("作者X:@iam678", fontSize = 13.sp, color = Theme.dim, modifier = Modifier.tap { runCatching { uriHandler.openUri("https://x.com/iam678") } })
         }
         if (stitching) BusyOverlay()
     }
