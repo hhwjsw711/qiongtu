@@ -72,7 +72,7 @@ enum class EffectKind(val id: String, val title: String, val category: EffectCat
     /** 位置是随机的，可以"换一换"。 */
     val shuffles: Boolean
         get() = category == EffectCategory.ATMOSPHERE || this == GLITCH || this == BOKEH_LIGHT || this == LEAF_SHADOW ||
-            this == GOD_RAYS || this == RAINBOW
+            this == GOD_RAYS || this == RAINBOW || this == STARBURST
 
     val defaultStrength: Float
         get() = when (this) {
@@ -130,6 +130,8 @@ data class EffectParams(
     val strength: Float = 0.7f,
     val variant: Int = 0,
     val seed: Long = 7,
+    /** 随机度 0.01…1：粒子、光斑、光束的大小、亮度、角度差别有多大。0.5 = 默认。 */
+    val chaos: Float = 0.5f,
     val mask: Bitmap? = null,
 ) {
     val kind: EffectKind? get() = EffectKind.by(id)
@@ -142,14 +144,14 @@ data class EffectParams(
         }
 
     /** 除了蒙版以外都一样。 */
-    fun sameSettings(o: EffectParams) = id == o.id && strength == o.strength && variant == o.variant && seed == o.seed
+    fun sameSettings(o: EffectParams) = id == o.id && strength == o.strength && variant == o.variant && seed == o.seed && chaos == o.chaos
 
     fun apply(src: Bitmap): Bitmap {
         val k = kind ?: return src
         if (isIdentity || src.width < 2 || src.height < 2) return src
         val vs = k.variants
         val v = if (vs.isEmpty()) EffectVariant("") else vs[variant.coerceIn(0, vs.size - 1)]
-        return EffectRender.render(k, src, strength.coerceIn(0f, 1f), v, variant, seed, if (k.usesMask) mask else null)
+        return EffectRender.render(k, src, strength.coerceIn(0f, 1f), v, variant, seed, chaos, if (k.usesMask) mask else null)
     }
 }
 
@@ -188,8 +190,11 @@ class EffectSky(val title: String, val symbol: String, val colors: List<Int>, va
 }
 
 /** 固定种子的随机数（和 iOS 的 EffectRNG 逐位一样，预览和保存画出来一样）。 */
-class EffectRNG(seed: Long) {
+class EffectRNG(seed: Long, chaos: Float = 0.5f) {
     private var state: ULong = seed.toULong() * 0x9E3779B97F4A7C15uL + 1uL
+
+    /** 随机范围放大 / 缩小的倍数：随机度 0.5 = 1 倍（原来的范围），越低越整齐一致，越高差别越大。 */
+    private val spread: Double = chaos.coerceIn(0.01f, 1f).toDouble() * 2
 
     fun next(): Double {
         state += 0x9E3779B97F4A7C15uL
@@ -200,5 +205,12 @@ class EffectRNG(seed: Long) {
         return (z shr 11).toDouble() / (1uL shl 53).toDouble()
     }
 
-    fun range(a: Double, b: Double) = a + (b - a) * next()
+    /** a…b 之间的随机数；随机度改变的是范围的宽窄（中点不变）。原范围全是正数时结果不会小于 a 的三成。 */
+    fun range(a: Double, b: Double): Double {
+        val mid = (a + b) / 2
+        val half = (b - a) / 2 * spread
+        var lo = mid - half
+        if (a >= 0) lo = maxOf(lo, a * 0.3)
+        return lo + (mid + half - lo) * next()
+    }
 }

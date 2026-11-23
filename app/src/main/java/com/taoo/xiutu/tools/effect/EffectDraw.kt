@@ -28,7 +28,7 @@ internal object EffectDraw {
     const val MAX_SIDE = 2048
 
     /** 在长边不超过 2048 的透明画布上画（y 朝上），返回画好的图（宽高比和 w×h 一样）。 */
-    fun overlay(w: Int, h: Int, seed: Long, draw: (Canvas, Float, Float, EffectRNG, Paint) -> Unit): Bitmap? {
+    fun overlay(w: Int, h: Int, seed: Long, chaos: Float = 0.5f, draw: (Canvas, Float, Float, EffectRNG, Paint) -> Unit): Bitmap? {
         val long = max(w, h)
         if (long < 2) return null
         val k = min(1f, MAX_SIDE.toFloat() / long)
@@ -39,7 +39,7 @@ internal object EffectDraw {
         c.translate(0f, oh.toFloat())
         c.scale(1f, -1f)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        draw(c, ow.toFloat(), oh.toFloat(), EffectRNG(seed), paint)
+        draw(c, ow.toFloat(), oh.toFloat(), EffectRNG(seed, chaos), paint)
         return bmp
     }
 
@@ -416,7 +416,7 @@ internal object EffectDraw {
      * 星芒：在画面最亮的几处画出放射状的星芒。small 是缩到长边 72 左右的画面（行 0 是上边）。
      * 返回 w×h 比例的叠加图；找不到够亮的点时返回 null。
      */
-    fun stars(small: Bitmap, w: Int, h: Int, points: Int): Bitmap? {
+    fun stars(small: Bitmap, w: Int, h: Int, points: Int, seed: Long = 1, chaos: Float = 0.5f): Bitmap? {
         val sw = small.width
         val sh = small.height
         if (sw < 3 || sh < 3) return null
@@ -449,21 +449,24 @@ internal object EffectDraw {
             if (picked.all { hypot(it.x - f.x, it.y - f.y) > 0.08 }) picked += f
         }
         if (picked.isEmpty()) return null
-        return overlay(w, h, 1) { c, W, H, _, p ->
+        return overlay(w, h, seed, chaos) { c, W, H, rng, p ->
             val u = max(W, H)
             picked.forEachIndexed { i, f ->
                 val len = u * (if (i == 0) 0.17f else 0.1f) * (0.6 + (f.v - threshold) / max(0.01, 1 - threshold) * 0.4).toFloat()
-                ray(c, p, (f.x * W).toFloat(), (f.y * H).toFloat(), len, points)
+                ray(c, p, (f.x * W).toFloat(), (f.y * H).toFloat(), len * rng.range(0.8, 1.2).toFloat(), points, rng)
             }
         }
     }
 
-    private fun ray(c: Canvas, p: Paint, x: Float, y: Float, length: Float, points: Int) {
+    private fun ray(c: Canvas, p: Paint, x: Float, y: Float, length: Float, points: Int, rng: EffectRNG) {
         val white = rgb(1f, 0.97f, 0.9f, 1f)
+        // 整颗星转一个小角度，每根芒长短不一（随机度越高差得越多）。
+        val turn = rng.range(-0.12, 0.12).toFloat()
         for (i in 0 until points) {
-            val a = i * PI.toFloat() / points * 2 + PI.toFloat() / 4
-            val ex = x + cos(a) * length
-            val ey = y + sin(a) * length
+            val a = i * PI.toFloat() / points * 2 + PI.toFloat() / 4 + turn
+            val each = length * rng.range(0.85, 1.15).toFloat()
+            val ex = x + cos(a) * each
+            val ey = y + sin(a) * each
             val half = length * 0.028f
             val nx = -sin(a) * half
             val ny = cos(a) * half
