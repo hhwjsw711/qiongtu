@@ -509,7 +509,8 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
         }
         // 只取光影和颜色时，AI 图的清晰度用不上，按标准尺寸要就够了，省钱。
         if (toneOnly) endpoint = endpoint.copy(hires = false)
-        val ops = model.ops
+        // 文字、贴纸、形状这些装饰不发给 AI，只发照片本身。
+        val ops = model.photoOps
         val sent = strokes.map { it.copy() }
         error = null
         result = null

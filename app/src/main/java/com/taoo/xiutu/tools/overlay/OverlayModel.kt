@@ -1,6 +1,7 @@
 package com.taoo.xiutu.tools.overlay
 
 import android.graphics.Bitmap
+import com.taoo.xiutu.editor.Tool
 import java.util.UUID
 
 // MARK: 文字 / 贴纸的数据
@@ -53,6 +54,34 @@ enum class OverlayAlign(val symbol: String) {
     LEFT("text.alignleft"), CENTER("text.aligncenter"), RIGHT("text.alignright"),
 }
 
+/** 形状的种类。 */
+enum class GraphicKind(val title: String, val symbol: String) {
+    RECT("矩形", "rectangle.fill"),
+    ELLIPSE("圆形", "circle.fill"),
+    POLYGON("多边形", "hexagon.fill"),
+    STAR("星形", "star.fill"),
+    HEART("心形", "heart.fill"),
+    ARROW("箭头", "arrowshape.right.fill"),
+    BUBBLE("气泡", "bubble.left.fill"),
+}
+
+/** 一个形状（方块、圆、多边形……）：画在自己的位图里，和文字、贴纸一样可以拖动、缩放、旋转。 */
+data class GraphicStyle(
+    val kind: GraphicKind = GraphicKind.RECT,
+    /** 高 / 宽。 */
+    val aspect: Float = 1f,
+    /** 圆角，0...1（矩形、多边形、气泡）。 */
+    val corner: Float = 0f,
+    /** 切角大小，0...0.5（矩形）。 */
+    val cut: Float = 0f,
+    /** 切哪几个角：左上 1、右上 2、右下 4、左下 8。 */
+    val cutCorners: Int = 0,
+    /** 多边形的边数 / 星形的角数。 */
+    val sides: Int = 6,
+    /** 是否填充颜色（不填充就只剩描边）。 */
+    val fill: Boolean = true,
+)
+
 /** 图片贴纸用的位图。按"是不是同一张图"来比较（普通类，equals 就是同一个对象）。 */
 class OverlayImage(val bitmap: Bitmap)
 
@@ -67,6 +96,8 @@ data class OverlayItem(
     val isSticker: Boolean = false,
     /** 图片贴纸。不为空时画这张图，text 只是个占位。 */
     val image: OverlayImage? = null,
+    /** 形状。不为空时画这个形状（颜色用 color），text 只是个占位。 */
+    val graphic: GraphicStyle? = null,
     /** 中心点，归一化坐标，原点在左上角。 */
     val cx: Float = 0.5f,
     val cy: Float = 0.5f,
@@ -121,6 +152,14 @@ data class OverlayItem(
     val glowStrength: Float = 0.6f,
 ) {
     val isImage: Boolean get() = image != null
+    val isGraphic: Boolean get() = graphic != null
+
+    /** 接着改这一项用的工具。 */
+    val tool: Tool get() = when {
+        isGraphic -> Tool.GRAPHIC
+        isSticker -> Tool.STICKER
+        else -> Tool.TEXT
+    }
 
     /** 只保留会影响"画出来长什么样"的部分：位置和角度清零。用来判断要不要重新渲染。 */
     val appearance: OverlayItem get() = copy(cx = 0f, cy = 0f, rotation = 0f)
