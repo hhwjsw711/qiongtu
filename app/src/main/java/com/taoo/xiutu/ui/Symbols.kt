@@ -443,4 +443,6 @@ private val SYMBOLS: Map<String, ImageVector> = mapOf(
     "rectangle.fill" to Icons.Filled.Rectangle,
     "arrowshape.right.fill" to Icons.Filled.Forward,
     "bubble.left.fill" to Icons.Filled.ChatBubble,
+    // 历史图库
+    "list.number" to Icons.Filled.FormatListNumbered,
 )

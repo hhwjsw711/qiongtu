@@ -20,6 +20,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlinx.serialization.Serializable
 
 /** 画布比例。value = 宽 / 高，原比例没有固定值。 */
 enum class BackdropRatio(val title: String, val value: Float?) {
@@ -38,6 +39,7 @@ enum class BackdropFill(val title: String, val symbol: String) {
  * 背景：把照片放到一块更大的画布上（指定比例，背景用模糊的照片、纯色、渐变或图案）。
  * 照片保持原来的像素不缩小，是画布按比例变大；所有尺寸都是相对值，预览和导出一样。
  */
+@Serializable
 data class BackdropParams(
     val ratio: BackdropRatio = BackdropRatio.ORIGINAL,
     /** 照片在画布里占多大：1 = 刚好顶满，越小四周留得越多。 */

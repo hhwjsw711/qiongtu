@@ -6,6 +6,7 @@ import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.tools.color.ColorParams
 import com.taoo.xiutu.tools.color.V3
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.serialization.Serializable
 
 enum class AdjustGroup(val title: String) {
     LIGHT("光效"), COLOR("色彩"), DETAIL("细节"), TONE("光影");
@@ -72,11 +73,13 @@ enum class HSLColor(val title: String, val hue: Float) {
 }
 
 /** 曲线上的一个控制点（x、y 都是 0...1）。 */
+@Serializable
 data class CurvePoint(val x: Float, val y: Float) {
     fun pointF() = PointF(x, y)
 }
 
 /** 曲线：总曲线 + 红绿蓝三条。每条至少有头尾两个点，x 递增。 */
+@Serializable
 data class CurveSet(val channels: List<List<CurvePoint>> = List(4) { IDENTITY }) {
     val isIdentity get() = channels.all { it == IDENTITY }
     fun isChanged(channel: Int) = channels[channel] != IDENTITY
@@ -89,6 +92,7 @@ data class CurveSet(val channels: List<List<CurvePoint>> = List(4) { IDENTITY })
 }
 
 /** 色调分离：给暗部和亮部各染一个颜色。 */
+@Serializable
 data class SplitTone(
     val shadowHue: Float = 0.6f,
     val shadowAmount: Float = 0f,
@@ -101,6 +105,7 @@ data class SplitTone(
 }
 
 /** 局部调色的一个点：只改以它为中心的一个圆里面，边缘渐变过渡。 */
+@Serializable
 data class LocalAdjust(
     val id: Long = nextId.incrementAndGet(),
     /** 中心，归一化图片坐标，原点左上角。 */
@@ -121,6 +126,7 @@ data class LocalAdjust(
 }
 
 /** 调色的全部参数。和分辨率无关。 */
+@Serializable
 data class AdjustParams(
     val values: Map<AdjustKey, Float> = emptyMap(),
     /** HSL：每个颜色的（色相、饱和度、明度），都是 -1...1。下标是 HSLColor.ordinal。 */

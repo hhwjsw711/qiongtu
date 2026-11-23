@@ -70,4 +70,5 @@ dependencies {
     // 人体姿态（美体塑形）
     implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
     implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta5")
+    testImplementation("junit:junit:4.13.2")
 }

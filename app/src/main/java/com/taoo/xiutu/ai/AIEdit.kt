@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.PointF
 import android.graphics.RectF
 import com.taoo.xiutu.core.Img
+import com.taoo.xiutu.editor.AIRecipe
 import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.gpu.Gpu
 import com.taoo.xiutu.gpu.GpuScope
@@ -37,6 +38,8 @@ class AIEdit(
     shared: AIEdit? = null,
     /** 0...1，把 AI 结果过头的锐化压下去，在本机调。 */
     val soften: Float = 0f,
+    /** 这一步是怎么发起的（套用到新照片时再跑一遍）；涂抹、融合出来的没有。 */
+    val recipe: AIRecipe? = null,
 ) : EditOp {
     val strokes: List<MosaicStroke> = strokes.map { it.copy() }
 
