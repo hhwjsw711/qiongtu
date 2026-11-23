@@ -319,7 +319,7 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
 
     // MARK: AI 美颜
 
-    private fun faceKey(style: BeautyStyle) = "$faceIndex|${style.id}"
+    private fun faceKey(style: BeautyStyle) = "$faceIndex|${style.prompt}"  // 男女两套有同名的风格，按指令区分
 
     fun isFaceStyleCached(style: BeautyStyle) = faceKey(style) in cachedFaceKeys
 
