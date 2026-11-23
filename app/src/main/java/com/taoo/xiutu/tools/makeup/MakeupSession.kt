@@ -10,6 +10,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.taoo.xiutu.ai.AIPresetGroup
+import com.taoo.xiutu.ai.currentLooks
+import com.taoo.xiutu.ai.maleLooks
 import com.taoo.xiutu.core.Img
 import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.editor.EditorModel
@@ -257,7 +259,7 @@ class MakeupSession(model: EditorModel) : ToolSession(model, Tool.MAKEUP) {
         when (category) {
             MakeupCategory.LOOK -> {
                 val name = pick("look") ?: return
-                val look = MakeupCatalog.looks.firstOrNull { it.name == name } ?: return
+                val look = (MakeupCatalog.currentLooks + MakeupCatalog.looks + MakeupCatalog.maleLooks).firstOrNull { it.name == name } ?: return
                 remember("look", v)
                 changeMakeup { it.applying(look, v / 0.8f) }
             }

@@ -58,6 +58,8 @@ import com.taoo.xiutu.tools.mosaic.MosaicStroke
 import com.taoo.xiutu.ui.Chip
 import com.taoo.xiutu.ui.CornerBadge
 import com.taoo.xiutu.ui.FeatureTile
+import com.taoo.xiutu.ui.GenderSetting
+import com.taoo.xiutu.ui.GenderToggle
 import com.taoo.xiutu.ui.ImageTile
 import com.taoo.xiutu.ui.SegmentBar
 import com.taoo.xiutu.ui.Theme
@@ -626,6 +628,9 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
                     }
                 }
             }
+            if (group == AIPresetGroup.BODY || group.isHair) {
+                GenderToggle()
+            }
             if (group == AIPresetGroup.MASTER) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("大师构图", selected = masterCompose, symbol = "viewfinder") { masterCompose = true }
@@ -640,7 +645,7 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
                     }
                 }
             }
-            key(group, if (group == AIPresetGroup.CREATIVE) creativeKind else null) {
+            key(group, if (group == AIPresetGroup.CREATIVE) creativeKind else null, GenderSetting.isMale) {
                 Row(
                     Modifier.bleed(16.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 6.dp, bottom = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(if (pictures) 10.dp else 4.dp),

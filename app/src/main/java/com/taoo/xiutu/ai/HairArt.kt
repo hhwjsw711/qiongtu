@@ -36,7 +36,7 @@ object HairArt {
     /** 画一次就记住。 */
     fun image(title: String, scale: Float = 3f): Bitmap? = synchronized(cache) {
         cache[title]?.let { return it }
-        val build = styles[title] ?: return null
+        val build = styles[title] ?: MalePresets.hairArtAlias[title]?.let { styles[it] } ?: return null
         val pw = (W * scale).roundToInt()
         val ph = (H * scale).roundToInt()
         val bmp = Bitmap.createBitmap(pw, ph, Bitmap.Config.ARGB_8888)
