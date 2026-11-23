@@ -45,6 +45,12 @@ enum OverlayDrawing {
 
     // MARK: 排版
 
+    /// 竖排时排版框的设置：一列一列从右往左排。
+    private static func frameAttributes(_ item: OverlayItem) -> CFDictionary? {
+        guard item.vertical, !item.isSticker else { return nil }
+        return [kCTFrameProgressionAttributeName: NSNumber(value: CTFrameProgression.rightToLeft.rawValue)] as CFDictionary
+    }
+
     static func layout(_ item: OverlayItem, fontSize fs: CGFloat) -> Layout? {
         guard fs >= 1 else { return nil }
         if let image = item.image { return imageLayout(item, image: image.cg, width: fs) }
@@ -61,7 +67,8 @@ enum OverlayDrawing {
         let probe = attributed(item, font: font, fontSize: fs, color: OverlayColor.white.cgColor(), stroke: 0)
         let setter = CTFramesetterCreateWithAttributedString(probe)
         let limit = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        let fit = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(location: 0, length: 0), nil, limit, nil)
+        let fit = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(location: 0, length: 0),
+                                                               frameAttributes(item), limit, nil)
         let text = CGRect(x: 0, y: 0, width: ceil(fit.width) + 2, height: ceil(fit.height) + 2)
 
         var box: CGPath?
@@ -78,7 +85,8 @@ enum OverlayDrawing {
                 margin = max(margin, max(abs(o.width), abs(o.height)) + shadowBlur(item, fs) * 1.7 + line)
             }
             if item.boxOn {
-                let lines = lineRects(setter: setter, in: text)
+                // 竖排时底色按整块文字画（按行的荧光笔效果只对横排）。
+                let lines = item.vertical ? [text] : lineRects(setter: setter, in: text)
                 let shape = boxShape(item, text: text, lines: lines, fs: fs)
                 box = shape.path
                 evenOdd = shape.evenOdd
@@ -171,6 +179,10 @@ enum OverlayDrawing {
         ]
         if !item.isSticker, item.letterSpacing != 0 {
             attrs[kCTKernAttributeName] = fs * min(max(item.letterSpacing, -0.2), 2) as NSNumber
+        }
+        if !item.isSticker, item.vertical {
+            // 竖排：中文直立，标点换成竖排的写法，英文和数字横躺着跟着走。
+            attrs[kCTVerticalFormsAttributeName] = kCFBooleanTrue
         }
         if stroke != 0 {
             // Core Text 的描边宽度是"字号的百分之几"。
@@ -322,7 +334,7 @@ enum OverlayDrawing {
             c.setShouldSmoothFonts(false)
             // Core Text 把字距加在每个字后面，最后一个字后面也有；居中、靠右时往右挪回来。
             var nudge: CGFloat = 0
-            if styled, item.letterSpacing != 0 {
+            if styled, item.letterSpacing != 0, !item.vertical {
                 let kern = fs * min(max(item.letterSpacing, -0.2), 2)
                 nudge = item.align == .center ? kern / 2 : (item.align == .right ? kern : 0)
             }
@@ -330,7 +342,7 @@ enum OverlayDrawing {
             func pass(_ color: CGColor, _ strokeWidth: CGFloat) {
                 let string = attributed(item, font: font, fontSize: fs, color: color, stroke: strokeWidth)
                 let setter = CTFramesetterCreateWithAttributedString(string)
-                CTFrameDraw(CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, nil), c)
+                CTFrameDraw(CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, frameAttributes(item)), c)
             }
             if line > 0 { pass(stroke, line + bold) }
             pass(fill, bold > 0 ? -bold : 0)

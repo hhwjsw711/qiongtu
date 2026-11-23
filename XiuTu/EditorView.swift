@@ -220,6 +220,11 @@ struct EditorView: View {
             if let name = ProcessInfo.processInfo.environment["XIUTU_TOOL"] {
                 if name.hasPrefix("ai:"), let group = AIPresetGroup(rawValue: String(name.dropFirst(3))) {
                     handle(.ai(group))
+                } else if name == "text+vertical" {
+                    model.open(.text) {
+                        let id = model.addOverlay(text: "竖排文字，你好。\n第二列 2026", sticker: false)
+                        model.updateOverlay(id) { $0.vertical = true; $0.size = 0.09 }
+                    }
                 } else if name == "layers+blank" {
                     model.open(.layers) { model.addBlankLayer() }
                 } else if let tool = Tool(rawValue: name) {

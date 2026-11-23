@@ -162,6 +162,8 @@ struct OverlayItem: Identifiable, Equatable {
     var bold = false
     var italic = false
     var align: OverlayAlign = .center
+    /// 竖排：从上往下写，一列写完换到左边一列（中文直排的习惯）。
+    var vertical = false
     /// 字距、行距，单位是"字号的倍数"。
     var letterSpacing: CGFloat = 0
     var lineSpacing: CGFloat = 0

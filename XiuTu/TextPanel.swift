@@ -201,6 +201,8 @@ struct TextPanel: View {
         case .layout:
             VStack(spacing: 10) {
                 HStack(spacing: 8) {
+                    textToggle("竖排", on: item.vertical) { change { $0.vertical.toggle() } }
+                    Rectangle().fill(Theme.chip).frame(width: 1, height: 20)
                     ForEach(OverlayAlign.allCases) { align in
                         toggle(align.symbol, on: item.align == align) { change { $0.align = align } }
                     }
@@ -220,6 +222,18 @@ struct TextPanel: View {
                 MiniSlider(title: "大小", value: item.scale, range: 0.3...5) { v in change { $0.scale = v } }
             }
         }
+    }
+
+    /// 和 toggle 一样大的开关，但写字（"竖排"用图标说不清）。
+    private func textToggle(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(on ? Color.black : Color.white)
+                .frame(width: 50, height: 34)
+                .background(on ? Color.white : Theme.chip, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func toggle(_ symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
