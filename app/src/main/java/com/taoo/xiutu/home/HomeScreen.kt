@@ -1,16 +1,23 @@
 package com.taoo.xiutu.home
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -18,9 +25,13 @@ import androidx.compose.ui.unit.sp
 import com.taoo.xiutu.ai.AISettings
 import com.taoo.xiutu.editor.Tool
 import com.taoo.xiutu.history.HistoryStore
+import com.taoo.xiutu.picker.PhotoLibrary
 import com.taoo.xiutu.settings.SettingsSheet
 import com.taoo.xiutu.tools.beauty.FavoriteFaceStore
+import com.taoo.xiutu.tools.collage.AutoStitchLoader
 import com.taoo.xiutu.ui.*
+import kotlinx.coroutines.launch
+import java.io.File
 
 /** 主页：一个大的"开始编辑"，加几个直达某个工具的快捷入口。 */
 @Composable
@@ -32,9 +43,33 @@ fun HomeScreen(
     startHistory: () -> Unit,
     startRaw: () -> Unit,
     startFavorite: () -> Unit = {},
+    /** 自动拼好的长图直接进编辑器。 */
+    openFile: (File) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
-    val shortcuts = listOf(Tool.CROP, Tool.FILTER, Tool.ADJUST, Tool.MOSAIC)
+    val shortcuts = listOf(Tool.CROP, Tool.FILTER, Tool.ADJUST)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var stitching by remember { mutableStateOf(false) }
+    var stitchError by remember { mutableStateOf<String?>(null) }
+    // 找最近一组连续截图拼成长图，拼好直接进编辑器。
+    fun runStitch() {
+        stitching = true
+        scope.launch {
+            val result = AutoStitchLoader.run(context)
+            stitching = false
+            result.file?.let(openFile) ?: run { stitchError = result.failure?.message }
+        }
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (PhotoLibrary.granted(context)) runStitch() else stitchError = AutoStitchLoader.Failure.NO_ACCESS.message
+    }
+    fun autoStitch() {
+        if (stitching) return
+        if (PhotoLibrary.granted(context)) { runStitch(); return }
+        val perms = if (Build.VERSION.SDK_INT >= 34) arrayOf(PhotoLibrary.permission, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) else arrayOf(PhotoLibrary.permission)
+        permission.launch(perms)
+    }
     Box(Modifier.fillMaxSize().background(Theme.bg).systemBarsPadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -50,6 +85,10 @@ fun HomeScreen(
                         Icon(sym(t.symbol), null, tint = Color.White, modifier = Modifier.size(30.dp))
                         Text(t.title, fontSize = 13.sp, color = Color.White)
                     }
+                }
+                Column(Modifier.weight(1f).press { autoStitch() }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(sym("rectangle.stack"), null, tint = Color.White, modifier = Modifier.size(30.dp))
+                    Text("自动拼图", fontSize = 13.sp, color = Color.White)
                 }
             }
             Row(
@@ -82,6 +121,15 @@ fun HomeScreen(
                 Icon(sym("chevron.right"), null, tint = Theme.dim, modifier = Modifier.size(14.dp))
             }
         }
+        if (stitching) BusyOverlay()
+    }
+    stitchError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { stitchError = null },
+            text = { Text(message) },
+            confirmButton = { TextButton({ stitchError = null }) { Text("好", color = Color.White) } },
+            containerColor = Theme.panel,
+        )
     }
     if (showSettings) SettingsSheet(onDismiss = { showSettings = false })
 }
