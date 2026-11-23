@@ -34,7 +34,6 @@ import com.taoo.xiutu.tools.beauty.FavoriteFaceStore
 import com.taoo.xiutu.tools.collage.AutoStitchLoader
 import com.taoo.xiutu.ui.*
 import kotlinx.coroutines.launch
-import java.io.File
 
 /** 主页：一个大的"开始编辑"，加几个直达某个工具的快捷入口。 */
 @Composable
@@ -47,7 +46,7 @@ fun HomeScreen(
     startRaw: () -> Unit,
     startFavorite: () -> Unit = {},
     /** 自动拼好的长图直接进编辑器。 */
-    openFile: (File) -> Unit = {},
+    openStitch: (com.taoo.xiutu.tools.collage.AutoStitchJob) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
     val shortcuts = listOf(Tool.CROP, Tool.FILTER, Tool.ADJUST)
@@ -56,13 +55,13 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var stitching by remember { mutableStateOf(false) }
     var stitchError by remember { mutableStateOf<String?>(null) }
-    // 找最近一组连续截图拼成长图，拼好直接进编辑器。
+    // 找最近一组连续截图，算好接缝后打开拼接页。
     fun runStitch() {
         stitching = true
         scope.launch {
             val result = AutoStitchLoader.run(context)
             stitching = false
-            result.file?.let(openFile) ?: run { stitchError = result.failure?.message }
+            result.job?.let(openStitch) ?: run { stitchError = result.failure?.message }
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {

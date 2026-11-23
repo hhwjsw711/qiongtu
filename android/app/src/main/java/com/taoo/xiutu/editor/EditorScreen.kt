@@ -104,6 +104,8 @@ fun EditorScreen(
     layerEdit: LayerEditRequest? = null,
     /** 打开后把历史图库里某张图的处理步骤套到这张照片上。 */
     recipe: EditRecipe? = null,
+    /** 自动拼图：打开拼接页并摆好这组截图。 */
+    stitchJob: com.taoo.xiutu.tools.collage.AutoStitchJob? = null,
     onClose: () -> Unit,
 ) {
     val embedded = layerEdit != null
@@ -119,7 +121,10 @@ fun EditorScreen(
     val replaying = player?.status != null
 
     fun start(t: Tool) {
-        model.open(t) { s -> if (t == Tool.TEXT) (s as? TextStarter)?.onOpenedFromMenu() }
+        model.open(t) { s ->
+            if (t == Tool.TEXT) (s as? TextStarter)?.onOpenedFromMenu()
+            if (stitchJob != null) (s as? com.taoo.xiutu.tools.collage.CollageSession)?.loadAutoStitch(stitchJob)
+        }
     }
 
     LaunchedEffect(Unit) {
