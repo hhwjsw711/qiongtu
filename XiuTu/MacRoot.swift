@@ -79,7 +79,7 @@ struct MacRootView: View {
             }
         }
         .ignoresSafeArea()
-        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+        .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in
             Task { open(await Self.urls(from: providers), purpose: .open) }
             return true
         }
@@ -162,17 +162,62 @@ struct MacRootView: View {
 
     // MARK: 打开文件
 
+    /// 拖进来的东西变成文件。Mac Catalyst 里从 Finder 拖文件给的不是路径，而是"图片文件的内容"，
+    /// 要用 loadInPlaceFileRepresentation 取；能原地读就用原文件，不能就先复制一份到临时目录（回调结束后系统会删掉它给的临时文件）。
     private static func urls(from providers: [NSItemProvider]) async -> [URL] {
         var urls: [URL] = []
         for provider in providers {
-            guard let item = try? await provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) else { continue }
-            if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                urls.append(url)
-            } else if let url = item as? URL {
-                urls.append(url)
+            if let url = await url(from: provider) { urls.append(url) }
+        }
+        return urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    private static func url(from provider: NSItemProvider) async -> URL? {
+        let types = provider.registeredTypeIdentifiers
+        // 先找图片类型（RAW 也算图片），按 RAW 优先：同一个文件可能同时带着 RAW 和预览 JPEG 两种。
+        let imageTypes = types.filter { UTType($0)?.conforms(to: .image) == true }
+        let type = imageTypes.first { UTType($0)?.conforms(to: .rawImage) == true } ?? imageTypes.first
+        if let type {
+            return await withCheckedContinuation { continuation in
+                provider.loadInPlaceFileRepresentation(forTypeIdentifier: type) { url, inPlace, _ in
+                    guard let url else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    if inPlace {
+                        _ = url.startAccessingSecurityScopedResource()
+                        continuation.resume(returning: url)
+                        return
+                    }
+                    continuation.resume(returning: copyToTemp(url, name: provider.suggestedName, type: type))
+                }
             }
         }
-        return urls
+        // 别的 App 只给了文件路径。
+        if types.contains(UTType.fileURL.identifier),
+           let item = try? await provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) {
+            if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) { return url }
+            if let url = item as? URL { return url }
+        }
+        return nil
+    }
+
+    /// 复制到临时目录，文件名尽量用原来的，没有扩展名就按类型补上。
+    private static func copyToTemp(_ url: URL, name: String?, type: String) -> URL? {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var file = url.lastPathComponent
+        if let name, !name.isEmpty, (file.hasPrefix(".") || file.count > 60) { file = name }
+        if (file as NSString).pathExtension.isEmpty, let ext = UTType(type)?.preferredFilenameExtension {
+            file += "." + ext
+        }
+        let dest = dir.appendingPathComponent(file)
+        do {
+            try FileManager.default.copyItem(at: url, to: dest)
+            return dest
+        } catch {
+            return nil
+        }
     }
 
     private static func isRaw(_ url: URL) -> Bool {
