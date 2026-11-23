@@ -430,22 +430,60 @@ struct ShapePanel: View {
         (model.shapeState.mode == .preset || model.shapeState.mode == .shape) && model.shapeState.body == nil
     }
 
+    @ViewBuilder
     private var options: some View {
         let state = model.shapeState
-        return HStack(spacing: 8) {
-            if state.mode == .tall {
-                Chip(title: "头部保护", symbol: state.headBusy ? "hourglass" : "person.crop.circle",
-                     selected: state.headProtect) { model.setShapeHeadProtect(!state.headProtect) }
-            } else {
-                Chip(title: "背景保护", symbol: state.protectBusy ? "hourglass" : "person.and.background.dotted",
-                     selected: state.protect) { model.setShapeProtect(!state.protect) }
-                Chip(title: "变形还原", symbol: "bandage", selected: state.restoring) {
-                    model.setShapeRestoring(!state.restoring)
+        if Platform.isMac, state.mode != .tall {
+            // Mac：面板窄，分两行。
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    protectChip(state, symbols: true)
+                    fillChip(state, symbols: true)
+                }
+                HStack(spacing: 8) {
+                    restoreChip(state, symbols: true)
+                    Spacer(minLength: 0)
+                    roundButton("arrow.uturn.backward") { model.shapeUndo() }
+                    roundButton("arrow.counterclockwise") { model.shapeReset() }
                 }
             }
-            Spacer(minLength: 0)
-            roundButton("arrow.uturn.backward") { model.shapeUndo() }
-            roundButton("arrow.counterclockwise") { model.shapeReset() }
+        } else {
+            HStack(spacing: 8) {
+                if state.mode == .tall {
+                    Chip(title: "头部保护", symbol: state.headBusy ? "hourglass" : "person.crop.circle",
+                         selected: state.headProtect) { model.setShapeHeadProtect(!state.headProtect) }
+                } else {
+                    // 手机上一排放三个开关，不带小图标才放得下。
+                    protectChip(state, symbols: false)
+                    fillChip(state, symbols: false)
+                    restoreChip(state, symbols: false)
+                }
+                Spacer(minLength: 0)
+                roundButton("arrow.uturn.backward") { model.shapeUndo() }
+                roundButton("arrow.counterclockwise") { model.shapeReset() }
+            }
+        }
+    }
+
+    private func protectChip(_ state: ShapeState, symbols: Bool) -> some View {
+        Chip(title: "背景保护", symbol: state.protectBusy ? "hourglass" : (symbols ? "person.and.background.dotted" : nil),
+             selected: state.protect) {
+            if state.protect { model.setShapeAIFill(false) }
+            model.setShapeProtect(!state.protect)
+        }
+    }
+
+    /// AI 补背景：打开时让 AI 补一张没有人的背景（计一次费），人让出来的地方用它。
+    private func fillChip(_ state: ShapeState, symbols: Bool) -> some View {
+        Chip(title: "补背景", symbol: state.aiFillBusy ? "hourglass" : (symbols ? "sparkles" : nil),
+             selected: state.aiFill && state.protect, badge: "AI") {
+            model.setShapeAIFill(!(state.aiFill && state.protect))
+        }
+    }
+
+    private func restoreChip(_ state: ShapeState, symbols: Bool) -> some View {
+        Chip(title: "变形还原", symbol: symbols ? "bandage" : nil, selected: state.restoring) {
+            model.setShapeRestoring(!state.restoring)
         }
     }
 

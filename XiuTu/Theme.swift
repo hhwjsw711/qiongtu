@@ -126,6 +126,9 @@ private struct MacChip: View {
                 Text(title)
                     .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
+                    // 放不下时先把字缩小，不用"…"截掉。
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
                 if let badge {
                     Text(badge)
                         .font(.system(size: 8, weight: .heavy))
@@ -136,7 +139,7 @@ private struct MacChip: View {
                 }
             }
             .foregroundStyle(selected ? Color.black : Color.white)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .frame(maxWidth: .infinity)
             .frame(height: 28)
             .background(selected ? Color.white : (hovering ? Color(white: 0.24) : Theme.chip),

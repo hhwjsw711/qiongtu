@@ -387,6 +387,8 @@ struct ShapeParams {
     var restore: [ShapeRestoreStroke] = []
     /// 背景保护用的人像蒙版（白 = 人）；nil = 不保护。
     var lockMask: CGImage?
+    /// AI 补好的"没有人的背景"（整张图大小）；有它时，人让出来的地方直接用它，不再拉旁边的背景。
+    var aiPlate: CGImage?
 
     var hasTall: Bool { talls.contains { $0.amount != 0 } }
 
@@ -404,7 +406,7 @@ struct ShapeParams {
         let source = origin == .zero ? image
             : image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
         guard let field = ShapeEngine.field(for: self, imageSize: source.extent.size) else { return image }
-        return ShapeEngine.warp(source, field: field, lock: hasTall ? nil : lockMask, plate: plate)
+        return ShapeEngine.warp(source, field: field, lock: hasTall ? nil : lockMask, plate: aiPlate ?? plate)
     }
 }
 
@@ -881,8 +883,8 @@ enum ShapeEngine {
         return background.composited(over: plate).cropped(to: extent)
     }
 
-    /// 按位移场取样。lock 不为空时"背景保护"：只有人跟着变形，背景保持原样，人让出来的地方用旁边拉过来的背景填。
-    /// （plate 现在不用了，留着参数是为了调用的地方不用改。）
+    /// 按位移场取样。lock 不为空时"背景保护"：只有人跟着变形，背景保持原样。
+    /// 人让出来的地方：有 plate（AI 补好的背景）就用它；没有就用旁边拉过来的背景，变形出了人的轮廓平滑减到零。
     /// image 的原点必须在 (0,0)。
     static func warp(_ image: CIImage, field: ShapeField, lock: CGImage? = nil, plate: CGImage? = nil) -> CIImage {
         let extent = image.extent
@@ -919,6 +921,30 @@ enum ShapeEngine {
 
         let person = stretched(lock, to: extent, data: true)
         let moved = displaced(person)
+        if let plate {
+            // AI 补背景：人的轮廓动过的地方换成补好的背景，其余地方一个像素都不动。
+            let background = stretched(plate, to: extent, data: false)
+            let changed = person
+                .applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: moved])
+                .clampedToExtent()
+                .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: scale * 0.01])
+                .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: scale * 0.005])
+                .applyingFilter("CIColorMatrix", parameters: [
+                    "inputRVector": CIVector(x: 2.5, y: 0, z: 0, w: 0),
+                    "inputGVector": CIVector(x: 0, y: 2.5, z: 0, w: 0),
+                    "inputBVector": CIVector(x: 0, y: 0, z: 2.5, w: 0),
+                ])
+                .applyingFilter("CIColorClamp")
+                .cropped(to: extent)
+            let behind = background.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: image,
+                kCIInputMaskImageKey: changed,
+            ]).cropped(to: extent)
+            return warped.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: behind,
+                kCIInputMaskImageKey: moved,
+            ]).cropped(to: extent)
+        }
         // 背景：人身上和人让出来的缝里照常变形（缝里是旁边拉过来的背景，纹理清楚），
         // 出了人的轮廓，变形在一小段距离里平滑地减到零。背景是连续的一整张，不会出现两张图叠在一起的重影。
         // 原来人占着的地方（包括让出来的缝）一定是 1，缝里才不会残留人的边；外面一圈平滑减到 0。

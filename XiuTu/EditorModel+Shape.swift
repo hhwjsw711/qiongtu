@@ -103,6 +103,10 @@ struct ShapeState {
     var protectBusy = false
     var lockMask: CGImage?
     var plate: CGImage?
+    /// AI 补背景：开关、正在生成、补好的背景。
+    var aiFill = false
+    var aiFillBusy = false
+    var aiPlate: CGImage?
     // 变形还原
     var restoring = false
     var restoreBrush: CGFloat = 0.06
@@ -217,14 +221,17 @@ extension EditorModel {
             }
         }
         params.restore = shapeState.restore
-        if shapeState.protect { params.lockMask = shapeState.lockMask }
+        if shapeState.protect {
+            params.lockMask = shapeState.lockMask
+            if shapeState.aiFill { params.aiPlate = shapeState.aiPlate }
+        }
         return params
     }
 
     func renderShape() {
         guard tool == .shape, let base = basePreview else { return }
         let params = shapeParams()
-        showLive(params.isIdentity ? base : params.apply(to: base, plate: shapeState.plate))
+        showLive(params.isIdentity ? base : params.apply(to: base))
     }
 
     /// 进到某一种做法时的准备：需要识别人体的先识别，需要辅助线的先摆一个默认位置。
@@ -460,6 +467,70 @@ extension EditorModel {
             self.renderShape()
         }
     }
+
+    /// AI 补背景：让 AI 把人从照片里去掉、补出后面的背景（计一次费），之后人让出来的地方都用它。
+    /// 关掉就回到本机的做法（拉旁边的背景）。补好的背景留着，再打开不用重新花钱。
+    func setShapeAIFill(_ on: Bool) {
+        guard tool == .shape, !shapeState.aiFillBusy else { return }
+        shapeState.error = nil
+        guard on else {
+            shapeState.aiFill = false
+            renderShape()
+            return
+        }
+        // 先确保背景保护开着（要用到人像蒙版）。
+        if !shapeState.protect || shapeState.lockMask == nil {
+            if shapeState.lockMask == nil {
+                setShapeProtect(true)
+                Task { [weak self] in
+                    while let self, self.shapeState.protectBusy { try? await Task.sleep(nanoseconds: 100_000_000) }
+                    guard let self, self.tool == .shape, self.shapeState.lockMask != nil else { return }
+                    self.setShapeAIFill(true)
+                }
+                return
+            }
+            shapeState.protect = true
+        }
+        if shapeState.aiPlate != nil {
+            shapeState.aiFill = true
+            renderShape()
+            return
+        }
+        guard let base = basePreview else { return }
+        guard let endpoint = AISettings.shared.endpoint() else {
+            shapeState.error = "还没有设置 \(AISettings.shared.active.shortTitle) 的 API Key。"
+            return
+        }
+        shapeState.aiFillBusy = true
+        Task { [weak self] in
+            var plate: CGImage?
+            var failure: String?
+            do {
+                _ = AIClient.takeLastUsage()
+                plate = try await AIRunner.run(endpoint: endpoint, prompt: Self.shapeFillPrompt, proxy: base, ops: [],
+                                               strokes: [], appendGuidance: false)
+                if let cost = AIClient.takeLastUsage()?.cost { AISettings.shared.addSpend(cost) }
+            } catch {
+                failure = error.localizedDescription
+            }
+            guard let self, self.tool == .shape else { return }
+            self.shapeState.aiFillBusy = false
+            if let plate {
+                self.shapeState.aiPlate = plate
+                self.shapeState.aiFill = true
+            } else {
+                self.shapeState.error = failure ?? "AI 没有补出背景，可以再试一次。"
+            }
+            self.renderShape()
+        }
+    }
+
+    static let shapeFillPrompt = """
+    Remove every person from this photo completely, including their hair, clothes, shadows and anything they are holding. \
+    Fill the area where they were with the background that would naturally be behind them: continue the walls, floor, \
+    railings, buildings, lights and textures with the same perspective, lighting, color and sharpness as the rest of the photo. \
+    Do not add any new people or objects. Keep every other part of the photo exactly the same, same framing and size.
+    """
 
     /// 增高时的头部保护：拉伸区域盖到头的时候，头这一段不跟着拉长。
     func setShapeHeadProtect(_ on: Bool) {
