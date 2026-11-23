@@ -261,7 +261,7 @@ struct TextPanel: View {
             }
             .padding(.vertical, 2)
         }
-        .padding(.horizontal, -16)
+        .padding(.horizontal, Platform.isMac ? 0 : -16)
         .contentMargins(.horizontal, 16, for: .scrollContent)
     }
 
@@ -334,7 +334,7 @@ struct TextPanel: View {
                     ForEach(fonts.fonts(in: fontCategory)) { choice in fontChip(choice, item: item) }
                 }
             }
-            .padding(.horizontal, -16)
+            .padding(.horizontal, Platform.isMac ? 0 : -16)
             .contentMargins(.horizontal, 16, for: .scrollContent)
             // 只在出错时显示一行原因（导入失败、下载失败）。
             if let problem = fonts.note {
@@ -434,7 +434,7 @@ struct OverlayColorRow: View {
             }
             .padding(.vertical, 1)
         }
-        .padding(.horizontal, -16)
+        .padding(.horizontal, Platform.isMac ? 0 : -16)
         .contentMargins(.horizontal, 16, for: .scrollContent)
     }
 }

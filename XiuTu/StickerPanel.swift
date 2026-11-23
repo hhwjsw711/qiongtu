@@ -83,7 +83,7 @@ struct StickerPanel: View {
                     }
                 }
             }
-            .padding(.horizontal, -16)
+            .padding(.horizontal, Platform.isMac ? 0 : -16)
             .contentMargins(.horizontal, 16, for: .scrollContent)
 
             if Platform.isMac {
@@ -97,7 +97,7 @@ struct StickerPanel: View {
                     LazyHGrid(rows: rows, spacing: 6) { grid }
                 }
                 .frame(height: 98)
-                .padding(.horizontal, -16)
+                .padding(.horizontal, Platform.isMac ? 0 : -16)
                 .contentMargins(.horizontal, 16, for: .scrollContent)
             }
 

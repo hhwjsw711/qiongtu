@@ -34,6 +34,9 @@ struct FlowLayout: Layout {
     var alignment: VerticalAlignment = .center
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        if let grid = grid(width: proposal.width, subviews: subviews) {
+            return CGSize(width: proposal.width ?? 0, height: grid.height)
+        }
         let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
         let width = rows.map(\.width).max() ?? 0
         let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
@@ -41,6 +44,17 @@ struct FlowLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if let grid = grid(width: bounds.width, subviews: subviews) {
+            // 等宽格子：每一格一样宽，整行铺满，标签按钮拉满格子，别的放在格子中间。
+            for (index, subview) in subviews.enumerated() {
+                let row = index / grid.columns, col = index % grid.columns
+                let x = bounds.minX + CGFloat(col) * (grid.cell + spacing)
+                let y = bounds.minY + grid.rowTops[row]
+                subview.place(at: CGPoint(x: x + grid.cell / 2, y: y + grid.rowHeights[row] / 2), anchor: .center,
+                              proposal: ProposedViewSize(width: grid.cell, height: grid.rowHeights[row]))
+            }
+            return
+        }
         var y = bounds.minY
         for row in arrange(width: bounds.width, subviews: subviews) {
             var x = bounds.minX
@@ -57,6 +71,36 @@ struct FlowLayout: Layout {
             }
             y += row.height + spacing
         }
+    }
+
+    private struct Grid {
+        let columns: Int
+        let cell: CGFloat
+        let rowTops: [CGFloat]
+        let rowHeights: [CGFloat]
+        var height: CGFloat { (rowTops.last ?? 0) + (rowHeights.last ?? 0) }
+    }
+
+    /// 宽度差不多的一组（比如一排标签）排成等宽的格子，比参差不齐地换行好看；宽窄差太多的就照常换行。
+    private func grid(width: CGFloat?, subviews: Subviews) -> Grid? {
+        guard let width, width.isFinite, width > 0, subviews.count >= 3 else { return nil }
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let widest = sizes.map(\.width).max() ?? 0
+        let narrowest = sizes.map(\.width).min() ?? 0
+        guard widest > 0, narrowest > 0, widest <= narrowest * 2.2, widest <= width else { return nil }
+        let columns = max(1, Int((width + spacing) / (widest + spacing)))
+        guard columns >= 2 else { return nil }
+        let cell = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+        var tops: [CGFloat] = []
+        var heights: [CGFloat] = []
+        var y: CGFloat = 0
+        for start in stride(from: 0, to: sizes.count, by: columns) {
+            let h = sizes[start..<min(start + columns, sizes.count)].map(\.height).max() ?? 0
+            tops.append(y)
+            heights.append(h)
+            y += h + spacing
+        }
+        return Grid(columns: columns, cell: cell, rowTops: tops, rowHeights: heights)
     }
 
     private struct Row {

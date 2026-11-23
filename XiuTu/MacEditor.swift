@@ -233,7 +233,9 @@ extension EditorView {
                 if let sub = subTitle(for: tool) {
                     sub
                         .frame(maxWidth: .infinity)
-                        .frame(height: 40)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: 40)
                         .background(MacTheme.header.opacity(0.6))
                 }
                 Rectangle().fill(MacTheme.line).frame(height: 1)

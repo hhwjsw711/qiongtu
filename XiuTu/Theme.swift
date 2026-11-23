@@ -84,23 +84,67 @@ struct Chip: View {
     var action: () -> Void
 
     var body: some View {
+        if Platform.isMac {
+            MacChip(title: title, symbol: symbol, selected: selected, badge: badge, action: action)
+        } else {
+            Button(action: action) {
+                HStack(spacing: 5) {
+                    if let symbol {
+                        Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
+                    }
+                    Text(title)
+                        .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                }
+                .foregroundStyle(selected ? Color.black : Color.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(selected ? Color.white : Theme.chip, in: Capsule())
+                .overlay(alignment: .topTrailing) {
+                    if let badge { CornerBadge(text: badge).offset(x: 3, y: -5) }
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Mac 上的标签：圆角方块，能拉满格子宽度；"AI"角标放在里面，不压到旁边的标签；鼠标移上去会亮一点。
+private struct MacChip: View {
+    let title: String
+    var symbol: String?
+    let selected: Bool
+    var badge: String?
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 if let symbol {
-                    Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
+                    Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
                 }
                 Text(title)
-                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                    .lineLimit(1)
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundStyle(selected ? Color.white : Color.black)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(selected ? Color.black.opacity(0.75) : Theme.accent, in: RoundedRectangle(cornerRadius: 3))
+                }
             }
             .foregroundStyle(selected ? Color.black : Color.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(selected ? Color.white : Theme.chip, in: Capsule())
-            .overlay(alignment: .topTrailing) {
-                if let badge { CornerBadge(text: badge).offset(x: 3, y: -5) }
-            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .background(selected ? Color.white : (hovering ? Color(white: 0.24) : Theme.chip),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
