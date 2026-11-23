@@ -390,7 +390,8 @@ final class EditorModel {
 
     // MARK: 工具进出
 
-    func begin(_ t: Tool) {
+    /// liftDecorations = false：不拿下末尾的装饰（图层融合的结果里已经画进了图层，再拿下放回会画两遍）。
+    func begin(_ t: Tool, liftDecorations: Bool = true) {
         guard let base = basePreview, !isBusy else { return }
         comparing = false
         switch t {
@@ -463,7 +464,7 @@ final class EditorModel {
         }
         tool = t
         refreshDetail()
-        if t == .ai || t == .beauty { liftFloating() }
+        if liftDecorations, t == .ai || t == .beauty { liftFloating() }
     }
 
     /// 进 AI 修图 / 美颜：末尾的装饰先拿下来，底图换成只有照片的样子；确认后装饰放回最上面。
@@ -509,7 +510,7 @@ final class EditorModel {
 
     /// 图层融合完：结果放进 AI 修图的结果面板，可以调强度和柔化，点 ✓ 才算数。
     func showFusedResult(_ image: CGImage) {
-        begin(.ai)
+        begin(.ai, liftDecorations: false)
         guard tool == .ai else { return }
         aiResult = image
         aiHasResult = true
@@ -744,7 +745,7 @@ final class EditorModel {
                 }
             case .doodle(let params):
                 if let stroke = params.strokes.last(where: { $0.brush != .eraser && hits($0.points, width: $0.width) }) {
-                    open(stroke.points.count <= 2 ? .mark : .doodle)
+                    open(stroke.brush.isShape ? .mark : .doodle)
                     return
                 }
             case .mosaic(let params):
