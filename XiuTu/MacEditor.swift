@@ -209,6 +209,7 @@ extension EditorView {
             } else {
                 Spacer(minLength: 0)
             }
+            MacLayersPanel(model: model)
             MacHistoryPanel(model: model, fill: model.tool == nil)
         }
     }

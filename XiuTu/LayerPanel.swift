@@ -186,9 +186,10 @@ struct LayerPanel: View {
                 }
                 .padding(.vertical, 4)
             }
-            strip
+            // Mac 上图层列表、不透明度在右边常驻的"图层"面板里，这里只放选中那一层的其他操作。
+            if !Platform.isMac { strip }
             if let layer = model.selectedLayer {
-                sliderRow(layer)
+                if !Platform.isMac { sliderRow(layer) }
                 actions(layer)
             } else {
                 backgroundRow
