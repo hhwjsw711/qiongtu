@@ -819,6 +819,19 @@ enum ShapeEngine {
 
     private static let kernel = CIKernel(source: kernelSource)
 
+    /// 和上面一样，但每一点的位移再乘上 weight（0...1）：背景保护时，背景的变形从人的边缘往外平滑地减到零。
+    static let fadeKernelSource = """
+    kernel vec4 shapeWarpFade(sampler image, sampler map, sampler weight, float scale, vec2 shift) {
+        vec2 d = destCoord();
+        vec4 m = sample(map, samplerTransform(map, d));
+        float w = sample(weight, samplerTransform(weight, d)).r;
+        vec2 p = d + shift + (m.rg - vec2(0.5)) * scale * w;
+        return sample(image, samplerTransform(image, p));
+    }
+    """
+
+    private static let fadeKernel = CIKernel(source: fadeKernelSource)
+
     private static func stretched(_ cg: CGImage, to extent: CGRect, data: Bool) -> CIImage {
         CIImage(cgImage: cg, options: data ? [.colorSpace: NSNull()] : [:])
             .transformed(by: CGAffineTransform(scaleX: extent.width / CGFloat(cg.width),
@@ -906,25 +919,22 @@ enum ShapeEngine {
 
         let person = stretched(lock, to: extent, data: true)
         let moved = displaced(person)
-        // 只有人的轮廓真的动过的地方才换成补好的背景，其余地方一个像素都不动。
-        let changed = person
-            .applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: moved])
-            .clampedToExtent()
-            .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: scale * 0.01])
-            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: scale * 0.005])
-            .applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: 2.5, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 2.5, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 2.5, w: 0),
-            ])
-            .applyingFilter("CIColorClamp")
+        // 背景：人身上和人让出来的缝里照常变形（缝里是旁边拉过来的背景，纹理清楚），
+        // 出了人的轮廓，变形在一小段距离里平滑地减到零。背景是连续的一整张，不会出现两张图叠在一起的重影。
+        // 原来人占着的地方（包括让出来的缝）一定是 1，缝里才不会残留人的边；外面一圈平滑减到 0。
+        let falloff = person.clampedToExtent()
+            .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: scale * 0.012])
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: scale * 0.01])
+        let weight = person.clampedToExtent()
+            .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: falloff])
             .cropped(to: extent)
-        // 人让出来的那条缝：用跟着拉过来的背景填，保留原来的纹理和清晰度。
-        // （以前用四周背景晕开的颜色糊上，背景有栏杆、灯光、建筑时会出现一片虚影。）
-        let behind = warped.applyingFilter("CIBlendWithMask", parameters: [
-            kCIInputBackgroundImageKey: image,
-            kCIInputMaskImageKey: changed,
-        ]).cropped(to: extent)
+        var behind = image
+        if let fade = Self.fadeKernel,
+           let out = fade.apply(extent: outExtent, roiCallback: { index, rect in
+               index == 0 ? rect.offsetBy(dx: 0, dy: shift.y).insetBy(dx: -reach, dy: -reach) : rect
+           }, arguments: [image.clampedToExtent(), map, weight.clampedToExtent(), scale, shift]) {
+            behind = out.cropped(to: extent)
+        }
         return warped.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: behind,
             kCIInputMaskImageKey: moved,
