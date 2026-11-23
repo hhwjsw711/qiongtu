@@ -3,8 +3,10 @@ package com.taoo.xiutu.tools.color
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlinx.serialization.Serializable
 
 /** 三个分量（颜色偏移、权重）。 */
+@Serializable
 data class V3(val x: Float, val y: Float, val z: Float) {
     val isZero get() = x == 0f && y == 0f && z == 0f
     fun array() = floatArrayOf(x, y, z)

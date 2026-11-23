@@ -141,4 +141,7 @@ class LayerStack(val layers: List<ImageLayer>) : EditOp {
     val isEmpty get() = layers.isEmpty()
 
     override fun apply(src: Bitmap): Bitmap = LayerRender.composite(src, layers, usePreview = false)
+
+    /** 图层浮在照片上面：AI 修图 / 美颜只处理下面的照片。 */
+    override val floats: Boolean get() = true
 }

@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import com.taoo.xiutu.ai.AISettings
 import com.taoo.xiutu.core.DraftStore
+import com.taoo.xiutu.ui.GenderSetting
 import com.taoo.xiutu.ui.Theme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
         HistoryStore.init(applicationContext)
         FavoriteFaceStore.init(applicationContext)
         DraftStore.init(applicationContext)
+        GenderSetting.init(applicationContext)
         setContent { XiuTuTheme { AppNav() } }
     }
 }
@@ -92,6 +94,7 @@ fun AppNav() {
                 startHistory = { nav.navigate("history") },
                 startRaw = { nav.navigate("raw") },
                 startFavorite = { nav.navigate("favoriteFace") },
+                openFile = { f -> nav.navigate("editorFile/${enc(f.absolutePath)}") },
             )
         }
         composable("picker/{target}/{tool}") { e ->
@@ -102,10 +105,12 @@ fun AppNav() {
                     when (target) {
                         "cover" -> nav.navigate("cover/${enc(uri.toString())}")
                         "studio" -> nav.navigate("studio/${enc(uri.toString())}")
+                        // 套用历史图库里某张图的处理步骤：tool 这一段放的是那张图的 id
+                        "recipe" -> nav.navigate("recipe/${enc(uri.toString())}/$tool")
                         else -> nav.navigate("editor/${enc(uri.toString())}/$tool")
                     }
                 },
-                onClose = { nav.popHome() },
+                onClose = { if (target == "recipe") nav.popBackStack() else nav.popHome() },
             )
         }
         composable("editor/{uri}/{tool}") { e ->
@@ -114,6 +119,14 @@ fun AppNav() {
             val context = LocalContext.current
             val model = remember { EditorModel(context).also { it.draftEnabled = true; it.load(uri) } }
             EditorScreen(model, tool) { nav.popBackStack() }
+        }
+        composable("recipe/{uri}/{id}") { e ->
+            val uri = Uri.parse(e.arguments?.getString("uri"))
+            val id = e.arguments?.getString("id") ?: ""
+            val context = LocalContext.current
+            val recipe = remember { HistoryStore.recipe(id) }
+            val model = remember { EditorModel(context).also { it.draftEnabled = true; it.load(uri) } }
+            EditorScreen(model, null, recipe = recipe) { nav.popBackStack() }
         }
         composable("editorFile/{path}") { e ->
             val file = File(e.arguments?.getString("path") ?: "")
@@ -138,7 +151,11 @@ fun AppNav() {
         composable("favoriteFace") { FavoriteFaceScreen { nav.popHome() } }
         composable("manga") { MangaScreen { nav.popHome() } }
         composable("history") {
-            HistoryScreen(onEdit = { f -> nav.navigate("editorFile/${enc(f.absolutePath)}") }, onClose = { nav.popHome() })
+            HistoryScreen(
+                onEdit = { f -> nav.navigate("editorFile/${enc(f.absolutePath)}") },
+                onApply = { id -> nav.navigate("picker/recipe/${enc(id)}") },
+                onClose = { nav.popHome() },
+            )
         }
     }
 }

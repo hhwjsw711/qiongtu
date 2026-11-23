@@ -1,6 +1,7 @@
 package com.taoo.xiutu.tools.makeup
 
 import com.taoo.xiutu.ai.AIPreset
+import com.taoo.xiutu.ai.currentLooks
 import kotlin.math.abs
 
 /** 美妆底部的大类。 */
@@ -77,7 +78,7 @@ private fun MakeupSession.lookOptions(m: FaceMakeup?): List<MakeupOption> {
     val list = arrayListOf(none(selected = m?.isEmpty ?: true, slot = "look") { face ->
         face.copy(lip = null, brow = null, eye = EyeMakeup(), contour = ContourMakeup(), blush = null)
     })
-    for (look in MakeupCatalog.looks) {
+    for (look in MakeupCatalog.currentLooks) {
         list += MakeupOption(look.name, look.name, selected = pick("look") == look.name,
             apply = { it.applying(look, 1f) }, preview = { it.applying(look, 1f) }, slot = "look")
     }

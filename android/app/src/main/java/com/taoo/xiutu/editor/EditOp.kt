@@ -25,6 +25,7 @@ enum class Tool(val title: String, val symbol: String) {
     SKIN("皮肤", "sparkle"),
     SHAPE("塑形", "figure.arms.open"),
     EFFECT("特效", "sparkles.rectangle.stack"),
+    GRAPHIC("形状", "square.on.circle"),
 }
 
 /**
@@ -55,7 +56,29 @@ interface EditOp {
      */
     fun hitTest(point: PointF, ratio: Float): Tool? = null
 
+    /** 浮在照片上面的装饰（文字、贴纸、形状、图层）：AI 只处理下面的照片，它们一直留在最上面。 */
+    val floats: Boolean get() = false
+
     companion object {
         fun applyAll(ops: List<EditOp>, src: Bitmap): Bitmap = ops.fold(src) { img, op -> op.apply(img) }
+
+        /**
+         * 把历史末尾那些浮在照片上的装饰挑出来（它们后面没有改画布的步骤，挪到最后不会变位置）。
+         * first = 照片本身的步骤，second = 可以一直浮在最上面的装饰。
+         */
+        fun splitFloating(ops: List<EditOp>): Pair<List<EditOp>, List<EditOp>> {
+            val photo = ArrayList<EditOp>()
+            val floating = ArrayList<EditOp>()
+            var movable = true
+            for (op in ops.asReversed()) {
+                if (movable && op.floats) {
+                    floating.add(0, op)
+                } else {
+                    if (op.changesCanvas) movable = false
+                    photo.add(0, op)
+                }
+            }
+            return photo to floating
+        }
     }
 }

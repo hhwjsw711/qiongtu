@@ -95,10 +95,12 @@ object OverlayRenderer {
 class OverlayOp(val items: List<OverlayItem>) : EditOp, HitSelectable {
     override fun apply(src: Bitmap): Bitmap = OverlayRenderer.composite(items, src)
 
-    override fun mergesOnReopen(tool: Tool): Boolean = tool == Tool.TEXT || tool == Tool.STICKER
+    override fun mergesOnReopen(tool: Tool): Boolean = tool == Tool.TEXT || tool == Tool.STICKER || tool == Tool.GRAPHIC
 
-    override fun hitTest(point: PointF, ratio: Float): Tool? =
-        OverlayRenderer.hit(items, point, ratio)?.let { if (it.isSticker) Tool.STICKER else Tool.TEXT }
+    /** 文字、贴纸、形状浮在照片上面：AI 修图 / 美颜只处理下面的照片。 */
+    override val floats: Boolean get() = true
+
+    override fun hitTest(point: PointF, ratio: Float): Tool? = OverlayRenderer.hit(items, point, ratio)?.tool
 
     override fun selectedId(point: PointF, ratio: Float): String? = OverlayRenderer.hit(items, point, ratio)?.id
 }

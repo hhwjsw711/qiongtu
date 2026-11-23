@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,7 +53,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /** 特效：光 / 模糊 / 复古 / 氛围 / AI 换天。 */
 class EffectSession(model: EditorModel) : ToolSession(model, Tool.EFFECT) {
@@ -119,7 +122,7 @@ class EffectSession(model: EditorModel) : ToolSession(model, Tool.EFFECT) {
         val out = HashMap<String, Bitmap>()
         for (k in kinds) {
             if (closed) break
-            val p = EffectParams(k.id, k.defaultStrength, 0, 7, mask)
+            val p = EffectParams(k.id, k.defaultStrength, 0, 7, mask = mask)
             runCatching { p.apply(image) }.onFailure { it.printStackTrace() }.getOrNull()?.let { out[k.id] = it }
         }
         return out
@@ -175,7 +178,11 @@ class EffectSession(model: EditorModel) : ToolSession(model, Tool.EFFECT) {
             return
         }
         var next = params
-        if (next.id != kind.id) next = next.copy(id = kind.id, strength = kind.defaultStrength, variant = 0)
+        if (next.id != kind.id) {
+            next = next.copy(id = kind.id, strength = kind.defaultStrength, variant = 0)
+            // 每次选一个随机排布的效果都重新随机一次，不会总是同一个样子。
+            if (kind.shuffles) next = next.copy(seed = Random.nextLong(1, Long.MAX_VALUE))
+        }
         params = next.copy(mask = if (kind.usesMask) mask else null)
         render()
     }
@@ -192,7 +199,13 @@ class EffectSession(model: EditorModel) : ToolSession(model, Tool.EFFECT) {
 
     /** 随机的效果换一种排布。 */
     fun shuffle() {
-        params = params.copy(seed = params.seed + 1)
+        params = params.copy(seed = Random.nextLong(1, Long.MAX_VALUE))
+        render()
+    }
+
+    /** 随机度 0.01…1。 */
+    fun setChaos(v: Float) {
+        params = params.copy(chaos = v.coerceIn(0.01f, 1f))
         render()
     }
 
@@ -211,12 +224,9 @@ class EffectSession(model: EditorModel) : ToolSession(model, Tool.EFFECT) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             error?.let { Text(it, fontSize = 13.sp, color = Color(1f, 0.45f, 0.4f)) }
-            Row(Modifier.alpha(if (kind == null) 0.3f else 1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    if (kind == null) "–" else "${(params.strength * 100).roundToInt()}",
-                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.width(44.dp),
-                )
-                XSlider(params.strength, { setStrength(it) }, 0f..1f, Modifier.weight(1f), enabled = kind != null)
+            SliderRow("强度", if (kind == null) null else params.strength, 0f..1f, Modifier.alpha(if (kind == null) 0.3f else 1f)) { setStrength(it) }
+            if (kind != null && kind.shuffles) {
+                SliderRow("随机度", params.chaos, 0.01f..1f) { setChaos(it) }
             }
             VariantRow(kind)
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -259,12 +269,29 @@ class EffectSession(model: EditorModel) : ToolSession(model, Tool.EFFECT) {
             if (kind != null) {
                 kind.variants.forEachIndexed { i, v -> Chip(v.title, params.variant == i) { setVariant(i) } }
                 if (kind.shuffles) {
-                    Box(
-                        Modifier.size(34.dp, 30.dp).press { shuffle() }.clip(CircleShape).background(Theme.chip),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(sym("dice"), "换一换", tint = Color.White, modifier = Modifier.size(16.dp)) }
+                    Row(
+                        Modifier.height(30.dp).press { shuffle() }.clip(CircleShape).background(Theme.chip).padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(sym("dice"), null, tint = Color.White, modifier = Modifier.size(15.dp))
+                        Text("随机", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    }
                 }
             }
+        }
+    }
+
+    /** 名字 + 滑条 + 数值（1…100）。 */
+    @Composable
+    private fun SliderRow(title: String, value: Float?, range: ClosedFloatingPointRange<Float>, modifier: Modifier = Modifier, set: (Float) -> Unit) {
+        Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.width(44.dp))
+            XSlider(value ?: 0f, set, range, Modifier.weight(1f), enabled = value != null)
+            Text(
+                value?.let { "${max((range.start * 100).toInt(), (it * 100).roundToInt())}" } ?: "–",
+                fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
+                textAlign = TextAlign.End, modifier = Modifier.width(34.dp),
+            )
         }
     }
 

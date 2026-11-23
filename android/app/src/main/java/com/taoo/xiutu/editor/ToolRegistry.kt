@@ -25,7 +25,7 @@ object ToolRegistry {
         Tool.ADJUST -> AdjustSession(model)
         Tool.FILTER -> FilterSession(model)
         Tool.MOSAIC -> MosaicSession(model)
-        Tool.TEXT, Tool.STICKER -> OverlaySession(model, t)
+        Tool.TEXT, Tool.STICKER, Tool.GRAPHIC -> OverlaySession(model, t)
         Tool.AI -> AISession(model)
         Tool.BEAUTY -> BeautySession(model)
         Tool.MAKEUP -> MakeupSession(model)

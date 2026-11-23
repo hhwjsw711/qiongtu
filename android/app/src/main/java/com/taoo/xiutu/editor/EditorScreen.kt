@@ -31,6 +31,7 @@ import com.taoo.xiutu.ai.AIPresetGroup
 import com.taoo.xiutu.history.HistoryStore
 import com.taoo.xiutu.settings.SettingsSheet
 import com.taoo.xiutu.ui.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** 底部一级菜单。 */
@@ -80,7 +81,7 @@ fun MainTab.entries(): List<MenuEntry> {
         )
         MainTab.HAIR -> AIPresetGroup.hairGroups.map { MenuEntry(it.title, it.symbol, "AI", MenuAction.OpenAI(it)) }
         MainTab.DECO -> listOf(
-            MenuEntry(Tool.STICKER), MenuEntry(Tool.TEXT), MenuEntry(Tool.DOODLE), MenuEntry(Tool.FRAME),
+            MenuEntry(Tool.STICKER), MenuEntry(Tool.TEXT), MenuEntry(Tool.GRAPHIC), MenuEntry(Tool.DOODLE), MenuEntry(Tool.FRAME),
             MenuEntry(Tool.BACKDROP), MenuEntry(Tool.MARK), MenuEntry(Tool.MOSAIC),
         )
         MainTab.AI -> AIPresetGroup.editGroups.map { MenuEntry(it.menuTitle, it.symbol, "AI", MenuAction.OpenAI(it)) }
@@ -101,6 +102,8 @@ fun EditorScreen(
     initialTool: Tool?,
     /** 不为空时编辑的是一个图层自己的内容（或者图层下面的照片）：点"完成"把步骤交回去，不存相册。 */
     layerEdit: LayerEditRequest? = null,
+    /** 打开后把历史图库里某张图的处理步骤套到这张照片上。 */
+    recipe: EditRecipe? = null,
     onClose: () -> Unit,
 ) {
     val embedded = layerEdit != null
@@ -112,6 +115,8 @@ fun EditorScreen(
     var showSave by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var mainTab by remember { mutableStateOf(MainTab.TOOLS) }
+    val player = remember { recipe?.let { RecipePlayer(model) } }
+    val replaying = player?.status != null
 
     fun start(t: Tool) {
         model.open(t) { s -> if (t == Tool.TEXT) (s as? TextStarter)?.onOpenedFromMenu() }
@@ -121,6 +126,11 @@ fun EditorScreen(
         if (initialTool != null) {
             if (model.isLoading) model.onLoaded = { start(initialTool) } else start(initialTool)
         }
+    }
+    LaunchedEffect(Unit) {
+        if (recipe == null || player == null) return@LaunchedEffect
+        snapshotFlow { model.isLoading }.first { !it }
+        if (model.base != null) player.start(recipe)
     }
     DisposableEffect(Unit) { onDispose { model.dispose() } }
 
@@ -156,21 +166,30 @@ fun EditorScreen(
                             .background(Theme.accent).padding(horizontal = 12.dp, vertical = 5.dp),
                     )
                 }
-            }
-            Bottom(model, mainTab, embedded, onTab = { mainTab = it }, onEntry = { action ->
-                when (action) {
-                    is MenuAction.OpenTool -> start(action.tool)
-                    is MenuAction.OpenAI -> model.beginAI(action.group)
-                    MenuAction.Erase -> model.beginAI(AIPresetGroup.REMOVE, AIPresetGroup.REMOVE.presets.first().prompt)
-                    is MenuAction.ToolMode ->
-                        // 进美颜后直接按满意脸型修：还没有满意脸型就不进
-                        if (action.mode == "favorite" && com.taoo.xiutu.tools.beauty.FavoriteFaceStore.current == null) {
-                            model.showToast("还没有满意脸型")
-                        } else {
-                            model.open(action.tool) { s -> (s as? ModeSelectable)?.selectMode(action.mode) }
-                        }
+                player?.status?.let { status ->
+                    RecipeBanner(status, Modifier.align(Alignment.TopCenter)) { player.stop() }
                 }
-            })
+            }
+            Box {
+                Bottom(model, mainTab, embedded, onTab = { mainTab = it }, onEntry = { action ->
+                    when (action) {
+                        is MenuAction.OpenTool -> start(action.tool)
+                        is MenuAction.OpenAI -> model.beginAI(action.group)
+                        MenuAction.Erase -> model.beginAI(AIPresetGroup.REMOVE, AIPresetGroup.REMOVE.presets.first().prompt)
+                        is MenuAction.ToolMode ->
+                            // 进美颜后直接按满意脸型修：还没有满意脸型就不进
+                            if (action.mode == "favorite" && com.taoo.xiutu.tools.beauty.FavoriteFaceStore.current == null) {
+                                model.showToast("还没有满意脸型")
+                            } else {
+                                model.open(action.tool) { s -> (s as? ModeSelectable)?.selectMode(action.mode) }
+                            }
+                    }
+                })
+                // 套用步骤时底部不能点
+                if (replaying) Box(Modifier.matchParentSize().pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+                })
+            }
         }
         if (model.isLoading || model.isBusy || saving) BusyOverlay()
         model.errorText?.let { Text(it, color = Theme.dim, modifier = Modifier.align(Alignment.Center)) }
@@ -205,6 +224,23 @@ fun EditorScreen(
             dismissButton = { TextButton({ confirmDiscard = false }) { Text("继续编辑", color = Color.White) } },
             containerColor = Theme.panel,
         )
+    }
+}
+
+/** 正在套用别的图的处理步骤：进度和"停止"。 */
+@Composable
+private fun RecipeBanner(status: String, modifier: Modifier, onStop: () -> Unit) {
+    Row(
+        modifier.padding(top = 6.dp).padding(horizontal = 16.dp).clip(CircleShape).background(Theme.accent)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+        Text(
+            status, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Black, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+        )
+        Text("停止", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Black, modifier = Modifier.tap(onClick = onStop))
     }
 }
 

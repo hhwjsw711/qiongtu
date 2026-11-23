@@ -45,6 +45,8 @@ import com.taoo.xiutu.ai.AIRunner
 import com.taoo.xiutu.ai.AISettings
 import com.taoo.xiutu.ai.NeedsKeyView
 import com.taoo.xiutu.ai.ProviderMenu
+import com.taoo.xiutu.ai.current
+import com.taoo.xiutu.ai.named
 import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.editor.EditorModel
 import com.taoo.xiutu.editor.ModeSelectable
@@ -54,6 +56,7 @@ import com.taoo.xiutu.ml.FaceDetector
 import com.taoo.xiutu.ml.FaceInfo
 import com.taoo.xiutu.ui.Chip
 import com.taoo.xiutu.ui.CornerBadge
+import com.taoo.xiutu.ui.GenderToggle
 import com.taoo.xiutu.ui.IconTile
 import com.taoo.xiutu.ui.Theme
 import com.taoo.xiutu.ui.XSlider
@@ -316,7 +319,7 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
 
     // MARK: AI 美颜
 
-    private fun faceKey(style: BeautyStyle) = "$faceIndex|${style.id}"
+    private fun faceKey(style: BeautyStyle) = "$faceIndex|${style.prompt}"  // 男女两套有同名的风格，按指令区分
 
     fun isFaceStyleCached(style: BeautyStyle) = faceKey(style) in cachedFaceKeys
 
@@ -375,7 +378,7 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
     /** 对当前显示的这个风格重新生成一次（会再调用一次接口）。 */
     fun regenerateFaceAI() {
         if (beautyStyle == BeautyStyle.favorite.id) return runFavoriteFace(force = true)
-        val style = BeautyStyle.all.firstOrNull { it.id == beautyStyle } ?: return
+        val style = BeautyStyle.named(beautyStyle) ?: return
         runFaceAI(style, force = true)
     }
 
@@ -405,7 +408,8 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
             return
         }
         endpoint = endpoint.copy(highFidelity = true, quality = if (endpoint.quality == "auto") "high" else endpoint.quality)
-        val ops = model.ops
+        // 文字、贴纸、形状这些装饰不发给 AI，只发照片本身。
+        val ops = model.photoOps
         val key = pendingFaceKey
         val sentFrame = RectF(crop)
         val sentEllipse = ellipse?.let { RectF(it) }
@@ -523,7 +527,9 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp, end = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    GenderToggle()
                     Chip("原图", !hasResult) { discardFaceAI() }
                     if (FavoriteFaceStore.current != null) {
                         val fav = BeautyStyle.favorite
@@ -532,7 +538,7 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
                             beautyStyle == fav.id && hasResult, symbol = "star.fill", badge = "AI",
                         ) { runFavoriteFace() }
                     }
-                    for (style in BeautyStyle.all) {
+                    for (style in BeautyStyle.current) {
                         Chip(
                             if (isFaceStyleCached(style)) "${style.title} ✓" else style.title,
                             beautyStyle == style.id && hasResult, badge = "AI",

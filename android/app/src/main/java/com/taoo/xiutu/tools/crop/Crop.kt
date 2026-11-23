@@ -12,6 +12,7 @@ import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sin
+import kotlinx.serialization.Serializable
 
 /** 裁剪比例。 */
 enum class CropAspect(val title: String, val ratio: Float?) {
@@ -21,6 +22,7 @@ enum class CropAspect(val title: String, val ratio: Float?) {
 }
 
 /** 归一化矩形，原点左上。 */
+@Serializable
 data class CropRect(val x: Float = 0f, val y: Float = 0f, val w: Float = 1f, val h: Float = 1f) {
     val maxX get() = x + w
     val maxY get() = y + h
@@ -30,6 +32,7 @@ data class CropRect(val x: Float = 0f, val y: Float = 0f, val w: Float = 1f, val
  * 裁剪 / 旋转参数。先水平翻转，再顺时针转 quarterTurns 个 90°，再拉直，最后裁剪。
  * straighten 是度数，正数 = 画面顺时针转。rect 相对于旋转翻转之后的画面。
  */
+@Serializable
 data class CropParams(
     val flip: Boolean = false,
     val quarterTurns: Int = 0,

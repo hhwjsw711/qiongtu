@@ -53,10 +53,10 @@ import java.util.Locale
 
 private val warnRed = Color(1f, 0.45f, 0.4f)
 
-/** 历史图库：App 里留的那份图。可以设密码、批量删除、一键清空。 */
+/** 历史图库：App 里留的那份图。可以设密码、批量删除、一键清空。onApply：把某张图的处理步骤套到一张新照片上。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(onEdit: (File) -> Unit, onClose: () -> Unit) {
+fun HistoryScreen(onEdit: (File) -> Unit, onApply: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = HistoryStore
@@ -185,7 +185,10 @@ fun HistoryScreen(onEdit: (File) -> Unit, onClose: () -> Unit) {
         }
         // 看大图盖在整页上面
         viewing?.let { item ->
-            HistoryViewer(item, onEdit = { f -> viewing = null; onEdit(f) }, onClose = { viewing = null })
+            HistoryViewer(
+                item, onEdit = { f -> viewing = null; onEdit(f) }, onApply = { viewing = null; onApply(item.id) },
+                onClose = { viewing = null },
+            )
         }
     }
     if (settingPassword) HistoryPasswordSheet { settingPassword = false }
@@ -344,14 +347,19 @@ private fun HistoryPasswordSheet(onDismiss: () -> Unit) {
 
 /** 看大图：可以继续编辑、存到相册、分享、删除。 */
 @Composable
-private fun HistoryViewer(item: HistoryItem, onEdit: (File) -> Unit, onClose: () -> Unit) {
+private fun HistoryViewer(item: HistoryItem, onEdit: (File) -> Unit, onApply: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val file = remember(item.id) { HistoryStore.file(item) }
     var image by remember(item.id) { mutableStateOf<Bitmap?>(null) }
+    var recipe by remember(item.id) { mutableStateOf<com.taoo.xiutu.editor.EditRecipe?>(null) }
+    var showSteps by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(item.id) { image = withContext(Dispatchers.IO) { Img.decode(file, 2400) } }
+    LaunchedEffect(item.id) {
+        recipe = withContext(Dispatchers.IO) { HistoryStore.recipe(item.id) }
+        image = withContext(Dispatchers.IO) { Img.decode(file, 2400) }
+    }
     BackHandler(onBack = onClose)
     val stamp = remember(item.date) { SimpleDateFormat("yyyy/M/d HH:mm", Locale.getDefault()).format(Date(item.date)) }
 
@@ -374,6 +382,7 @@ private fun HistoryViewer(item: HistoryItem, onEdit: (File) -> Unit, onClose: ()
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 IconTile("slider.horizontal.3", "编辑") { onEdit(file) }
+                if (recipe != null) IconTile("list.number", "步骤") { showSteps = true }
                 IconTile("square.and.arrow.down", "存到相册") {
                     scope.launch {
                         val ok = withContext(Dispatchers.IO) { HistoryStore.saveToGallery(context, item) }
@@ -391,6 +400,9 @@ private fun HistoryViewer(item: HistoryItem, onEdit: (File) -> Unit, onClose: ()
                 IconTile("trash", "删除") { confirmDelete = true }
             }
         }
+    }
+    recipe?.let { r ->
+        if (showSteps) RecipeSheet(r, onDismiss = { showSteps = false }) { showSteps = false; onApply() }
     }
     if (confirmDelete) {
         ConfirmDialog("删除这张？", "删除", onDismiss = { confirmDelete = false }) {

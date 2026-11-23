@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.taoo.xiutu.core.Img
 import com.taoo.xiutu.core.Saver
+import com.taoo.xiutu.editor.EditRecipe
 import com.taoo.xiutu.editor.SaveOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,6 +80,15 @@ object HistoryStore {
 
     private fun thumbFile(id: String) = File(folder, "$id.thumb.jpg")
 
+    private fun recipeFile(id: String) = File(folder, "$id.recipe.json")
+
+    /** 这张图的处理步骤（从修图存进来的才有）。读文件，别在主线程上反复调。 */
+    fun recipe(id: String): EditRecipe? {
+        val f = recipeFile(id)
+        if (folder == null || !f.exists()) return null
+        return runCatching { EditRecipe.decode(f.readText()) }.getOrNull()
+    }
+
     private fun saveIndex(list: List<HistoryItem>) {
         val dir = folder ?: return
         val tmp = File(dir, "index.json.tmp")
@@ -94,11 +104,12 @@ object HistoryStore {
         if (Looper.myLooper() == Looper.getMainLooper()) sync() else main.post(sync)
     }
 
-    /** 存一张进来（阻塞，在后台线程调用）。ext 是 jpg / heic / png。 */
-    fun add(context: Context, data: ByteArray, ext: String, source: String) {
+    /** 存一张进来（阻塞，在后台线程调用）。ext 是 jpg / heic / png；recipe 是从修图存进来时的处理步骤。 */
+    fun add(context: Context, data: ByteArray, ext: String, source: String, recipe: EditRecipe? = null) {
         init(context)
         val dir = folder ?: return
         val id = UUID.randomUUID().toString()
+        if (recipe != null && recipe.steps.isNotEmpty()) runCatching { recipeFile(id).writeText(recipe.encode()) }
         val f = File(dir, "$id.$ext")
         runCatching { f.writeBytes(data) }.onFailure { return }
         var w = 0
@@ -115,7 +126,7 @@ object HistoryStore {
                 }
             }
         }.getOrNull()
-        if (thumb == null) { f.delete(); return }
+        if (thumb == null) { f.delete(); recipeFile(id).delete(); return }
         runCatching { thumbFile(id).writeBytes(Img.jpeg(Img.soft(thumb), 80)) }
         val item = HistoryItem(id, System.currentTimeMillis(), source, ext, w, h)
         synchronized(lock) {
@@ -143,6 +154,7 @@ object HistoryStore {
             for (item in all) if (item.id in ids) {
                 file(item).delete()
                 thumbFile(item.id).delete()
+                recipeFile(item.id).delete()
                 thumbs.remove(item.id)
             }
             all = all.filter { it.id !in ids }

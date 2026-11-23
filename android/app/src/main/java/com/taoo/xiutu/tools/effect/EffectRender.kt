@@ -20,23 +20,23 @@ import kotlin.math.roundToInt
  * iOS 的坐标 y 朝上，这里 uv 原点在左上：位置相关的东西都换算过（y → H − y）。
  */
 internal object EffectRender {
-    fun render(kind: EffectKind, src: Bitmap, s: Float, v: EffectVariant, vi: Int, seed: Long, mask: Bitmap?): Bitmap {
+    fun render(kind: EffectKind, src: Bitmap, s: Float, v: EffectVariant, vi: Int, seed: Long, chaos: Float, mask: Bitmap?): Bitmap {
         val w = src.width
         val h = src.height
         // Canvas 画的叠加层先在调用线程上画好（不占 GPU 线程）。
         val overlay: Bitmap? = when (kind) {
-            EffectKind.GOD_RAYS -> EffectDraw.overlay(w, h, seed) { c, W, H, rng, p -> EffectDraw.godRays(c, W, H, rng, p, vi == 0, v) }
-            EffectKind.RAINBOW -> EffectDraw.overlay(w, h, seed) { c, W, H, rng, p -> EffectDraw.rainbow(c, W, H, rng, p) }
-            EffectKind.BOKEH_LIGHT -> EffectDraw.overlay(w, h, seed) { c, W, H, rng, p -> EffectDraw.bokehSpots(c, W, H, rng, p, if (vi == 2) null else v) }
-            EffectKind.LEAF_SHADOW -> EffectDraw.overlay(w, h, seed) { c, W, H, rng, p -> EffectDraw.leafPattern(c, W, H, rng, p) }
-            EffectKind.BLINDS -> EffectDraw.overlay(w, h, seed) { c, W, H, _, p -> EffectDraw.blindsPattern(c, W, H, p) }
+            EffectKind.GOD_RAYS -> EffectDraw.overlay(w, h, seed, chaos) { c, W, H, rng, p -> EffectDraw.godRays(c, W, H, rng, p, vi == 0, v) }
+            EffectKind.RAINBOW -> EffectDraw.overlay(w, h, seed, chaos) { c, W, H, rng, p -> EffectDraw.rainbow(c, W, H, rng, p) }
+            EffectKind.BOKEH_LIGHT -> EffectDraw.overlay(w, h, seed, chaos) { c, W, H, rng, p -> EffectDraw.bokehSpots(c, W, H, rng, p, if (vi == 2) null else v) }
+            EffectKind.LEAF_SHADOW -> EffectDraw.overlay(w, h, seed, chaos) { c, W, H, rng, p -> EffectDraw.leafPattern(c, W, H, rng, p) }
+            EffectKind.BLINDS -> EffectDraw.overlay(w, h, seed, chaos) { c, W, H, _, p -> EffectDraw.blindsPattern(c, W, H, p) }
             else -> if (kind.category == EffectCategory.ATMOSPHERE) {
-                EffectDraw.overlay(w, h, seed) { c, W, H, rng, p -> EffectDraw.particles(kind, c, W, H, rng, p) }
+                EffectDraw.overlay(w, h, seed, chaos) { c, W, H, rng, p -> EffectDraw.particles(kind, c, W, H, rng, p) }
             } else null
         }
         return Gpu.run {
             val f = Fx(this, upload(src))
-            val out = f.render(kind, s, v, vi, seed, mask, overlay) ?: return@run src
+            val out = f.render(kind, s, v, vi, seed, chaos, mask, overlay) ?: return@run src
             read(out)
         }
     }
@@ -175,7 +175,7 @@ private class Fx(val g: GpuScope, val src: Tex) {
 
     // MARK: 各个效果
 
-    fun render(kind: EffectKind, s: Float, v: EffectVariant, vi: Int, seed: Long, maskBmp: Bitmap?, overlay: Bitmap?): Tex? {
+    fun render(kind: EffectKind, s: Float, v: EffectVariant, vi: Int, seed: Long, chaos: Float, maskBmp: Bitmap?, overlay: Bitmap?): Tex? {
         val mask = maskBmp?.let { g.upload(it) }
         val k = "s" to s
         return when (kind) {
@@ -200,7 +200,7 @@ private class Fx(val g: GpuScope, val src: Tex) {
             EffectKind.STARBURST -> {
                 val points = if (vi == 1) 6 else if (vi == 2) 8 else 4
                 val small = g.read(shrink(src, 72f))
-                val stars = EffectDraw.stars(small, W, H, points) ?: return null
+                val stars = EffectDraw.stars(small, W, H, points, seed, chaos) ?: return null
                 finish(FxShaders.SCREEN_LAYER, mapOf("layer" to g.upload(stars)), mapOf("k" to s))
             }
             EffectKind.GOD_RAYS -> {
@@ -287,7 +287,7 @@ private class Fx(val g: GpuScope, val src: Tex) {
                     mapOf("color" to floatArrayOf(v.r * 1.4f, v.g * 1.4f, v.b * 1.4f)), t.width, t.height)
                 finish(FxShaders.NEON, mapOf("line" to line, "glow" to blurLowOf(line, dim * 0.008f)), mapOf(k))
             }
-            EffectKind.GLITCH -> glitch(s, seed)
+            EffectKind.GLITCH -> glitch(s, seed, chaos)
             EffectKind.CRT -> {
                 val t = work(min(dim, 900f))
                 val glow = blur(t, dim * 0.012f * scaleOf(t))
@@ -361,8 +361,8 @@ private class Fx(val g: GpuScope, val src: Tex) {
 
     // MARK: 故障
 
-    private fun glitch(s: Float, seed: Long): Tex {
-        val rng = EffectRNG(seed + 99)
+    private fun glitch(s: Float, seed: Long, chaos: Float): Tex {
+        val rng = EffectRNG(seed + 99, chaos)
         val y0 = ArrayList<Float>()
         val y1 = ArrayList<Float>()
         val shift = ArrayList<Float>()

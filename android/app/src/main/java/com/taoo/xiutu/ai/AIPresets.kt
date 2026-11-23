@@ -1,5 +1,7 @@
 package com.taoo.xiutu.ai
 
+import com.taoo.xiutu.ui.GenderSetting
+
 /** AI 面板里的一条快捷指令。 */
 data class AIPreset(
     val title: String,
@@ -69,7 +71,18 @@ enum class AIPresetGroup(val title: String, val symbol: String) {
     /** 这一组的按钮用图片（小图是本机模拟的大致色调）。 */
     val usesTonePreview get() = this == MASTER || this == CAMERA || this == LIGHT || this == CREATIVE
 
-    val presets: List<AIPreset> get() = PRESETS.getValue(this)
+    /** 美体和美发三组按女 / 男开关给不同的一套。 */
+    val presets: List<AIPreset>
+        get() {
+            if (GenderSetting.isMale) when (this) {
+                BODY -> return MalePresets.body
+                HAIR_STYLE -> return MalePresets.hairStyles
+                HAIR_COLOR -> return MalePresets.hairColors
+                HAIR_CARE -> return MalePresets.hairCare
+                else -> {}
+            }
+            return PRESETS.getValue(this)
+        }
 
     companion object {
         /** 美发的三组。 */
@@ -236,11 +249,6 @@ private val PRESETS: Map<AIPresetGroup, List<AIPreset>> by lazy {
             AIPreset("齐刘海", "scissors", "把发型换成整齐的齐刘海，其余头发不变。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
             AIPreset("中分", "scissors", "把发型换成中分，露出额头。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
             AIPreset("侧分", "scissors", "把发型换成三七侧分，发根蓬松。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
-            AIPreset("寸头", "scissors", "把发型换成干净利落的男士寸头。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
-            AIPreset("背头", "scissors", "把发型换成向后梳的男士背头。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
-            AIPreset("纹理烫", "scissors", "把发型换成蓬松有层次的男士纹理烫。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
-            AIPreset("微分碎盖", "scissors", "把发型换成韩式微分碎盖男士短发。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
-            AIPreset("狼尾", "scissors", "把发型换成后颈留长的狼尾发型。发色保持不变；头发要有真实的发丝细节，和头型、发际线自然贴合。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true),
         ),
         AIPresetGroup.HAIR_COLOR to listOf(
             AIPreset("自然黑", "paintpalette", "把头发染成自然的黑色。只改头发的颜色，发型、发丝走向和长度都不变；颜色要像真的染出来的，有深浅层次和自然的高光，发根过渡自然。脸、五官、表情、肤色、妆容、衣服、姿势和背景都不变，必须还是同一个人。", hairCrop = true, tint = 0x1A1A1C),

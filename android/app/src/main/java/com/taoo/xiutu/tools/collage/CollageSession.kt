@@ -13,10 +13,22 @@ import com.taoo.xiutu.editor.ToolSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.max
+import kotlin.math.min
 
 /** 模板列表里的一项：模板 + 用哪个画布比例。 */
 class CollageChoice(val layout: CollageLayout, val ratio: CollageRatio) {
     val id: String get() = layout.id + "@" + ratio.name
+}
+
+/** 拼接时可以推的边。 */
+sealed class StitchEdge {
+    /** 第一张图的开头。 */
+    data object Start : StitchEdge()
+    /** 第 index 张和下一张之间的接缝。 */
+    data class Seam(val index: Int) : StitchEdge()
+    /** 最后一张图的结尾。 */
+    data object End : StitchEdge()
 }
 
 /** 拼图工具打开期间的全部状态。 */
@@ -251,6 +263,46 @@ class CollageSession(model: EditorModel) : ToolSession(model, Tool.COLLAGE) {
     fun setVertical(vertical: Boolean) {
         if (params.vertical == vertical) return
         params = params.copy(vertical = vertical)
+        renderCollage()
+    }
+
+    // MARK: 拼接裁剪
+
+    /**
+     * 拼接时推一条边。moved 是从按下到现在沿拼接方向挪了多少（以图的宽 / 高为 1；竖拼向下、横拼向右为正），
+     * start 是按下时的图。
+     */
+    fun stitchPush(edge: StitchEdge, moved: Float, start: List<CollagePicture>) {
+        val (refW, refH) = reference
+        val full = params.stitchFullLengths(refW, refH)
+        if (start.size != full.size || start.isEmpty()) return
+        val pics = start.toMutableList()
+        fun clampStart(i: Int, v: Float) { pics[i] = pics[i].copy(cropStart = v.coerceIn(0f, max(0f, 0.95f - pics[i].cropEnd))) }
+        fun clampEnd(i: Int, v: Float) { pics[i] = pics[i].copy(cropEnd = v.coerceIn(0f, max(0f, 0.95f - pics[i].cropStart))) }
+        when (edge) {
+            StitchEdge.Start -> clampStart(0, start[0].cropStart + moved / full[0])
+            StitchEdge.End -> {
+                val i = pics.size - 1
+                clampEnd(i, start[i].cropEnd - moved / full[i])
+            }
+            is StitchEdge.Seam -> {
+                val up = edge.index
+                val down = up + 1
+                if (down >= pics.size) return
+                if (moved > 0) {
+                    // 往下推：先把上面那张裁掉的放回来，放完了再裁下面那张的开头。
+                    val giveBack = min(moved, start[up].cropEnd * full[up])
+                    clampEnd(up, start[up].cropEnd - giveBack / full[up])
+                    clampStart(down, start[down].cropStart + (moved - giveBack) / full[down])
+                } else {
+                    val m = -moved
+                    val giveBack = min(m, start[down].cropStart * full[down])
+                    clampStart(down, start[down].cropStart - giveBack / full[down])
+                    clampEnd(up, start[up].cropEnd + (m - giveBack) / full[up])
+                }
+            }
+        }
+        params = params.copy(pictures = pics)
         renderCollage()
     }
 }
