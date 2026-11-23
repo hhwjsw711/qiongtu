@@ -469,6 +469,17 @@ struct MacCommands: Commands {
                 .keyboardShortcut("s")
                 .disabled(editor == nil || editor?.model.tool != nil)
         }
+        CommandMenu("视图") {
+            Button("放大") { MacCanvasState.shared.zoomIn() }
+                .keyboardShortcut("=")
+            Button("缩小") { MacCanvasState.shared.zoomOut() }
+                .keyboardShortcut("-")
+            Button("适合窗口") { MacCanvasState.shared.fit() }
+                .keyboardShortcut("0")
+            Divider()
+            Button(MacCanvasState.shared.magnifier ? "关闭放大镜" : "放大镜") { MacCanvasState.shared.magnifier.toggle() }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+        }
         CommandGroup(replacing: .undoRedo) {
             Button("撤销") { editor?.undo() }
                 .keyboardShortcut("z")

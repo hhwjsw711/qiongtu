@@ -6,6 +6,24 @@ enum Platform {
     static let isMac = ProcessInfo.processInfo.isMacCatalystApp
 }
 
+/// Mac 版画布的缩放状态：放大镜开没开、现在放大了多少（1 = 整张图正好放进窗口），以及菜单里的缩放命令。
+@Observable
+final class MacCanvasState {
+    static let shared = MacCanvasState()
+    var magnifier = false
+    var zoom: CGFloat = 1
+    /// 每次加一 = 缩回整张图。
+    var fitRequest = 0
+    /// 菜单里的放大 / 缩小：id 每次加一，factor 是倍数。
+    var zoomStep: (id: Int, factor: CGFloat) = (0, 1)
+
+    func zoomIn() { zoomStep = (zoomStep.id + 1, 1.5) }
+    func zoomOut() { zoomStep = (zoomStep.id + 1, 1 / 1.5) }
+    func fit() { fitRequest += 1 }
+
+    private init() {}
+}
+
 /// Mac 版的配色：比手机版的纯黑浅一点，分出工具栏、面板和画布底。
 enum MacTheme {
     static let chrome = Color(white: 0.14)
@@ -165,6 +183,12 @@ extension EditorView {
             MacIconButton(symbol: "arrow.uturn.forward", help: "重做 ⇧⌘Z / Ctrl+Shift+Z") { macCommands.redo() }
                 .disabled(!macCommands.canRedo)
             Spacer(minLength: 16)
+            MacIconButton(symbol: canvasState.magnifier ? "minus.magnifyingglass" : "plus.magnifyingglass",
+                          help: "放大镜：单击放大、⌥ 单击缩小、左右拖动缩放（⇧⌘M）") { canvasState.magnifier.toggle() }
+                .foregroundStyle(canvasState.magnifier ? Theme.accent : Color.white)
+                .background(canvasState.magnifier ? Theme.accent.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            MacIconButton(symbol: "arrow.down.right.and.arrow.up.left", help: "适合窗口（⌘0）") { canvasState.fit() }
+                .disabled(canvasState.zoom < 1.01)
             MacHoldButton(symbol: "square.split.2x1", help: "按住看原图") { model.comparing = $0 }
                 .opacity(model.isLoading ? 0.3 : 1)
             if let layerEdit {
@@ -194,6 +218,8 @@ extension EditorView {
         .frame(height: 44)
         .background(MacTheme.chrome)
     }
+
+    private var canvasState: MacCanvasState { MacCanvasState.shared }
 
     private var fileTitle: String {
         let name = fileURL?.lastPathComponent ?? ""
@@ -267,6 +293,11 @@ extension EditorView {
         HStack(spacing: 14) {
             if let size = imagePixels {
                 Text("\(Int(size.width)) × \(Int(size.height)) 像素")
+            }
+            Text("\(Int((canvasState.zoom * 100).rounded()))%")
+                .help("100% = 整张图放进窗口")
+            if canvasState.magnifier {
+                Label("放大镜", systemImage: "plus.magnifyingglass").foregroundStyle(Theme.accent)
             }
             if let tool = model.tool {
                 Text(title(for: tool))

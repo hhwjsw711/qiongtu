@@ -29,6 +29,12 @@ struct ZoomableCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ view: CanvasScrollView, context: Context) {
+        if Platform.isMac {
+            let state = MacCanvasState.shared
+            view.magnifier = state.magnifier
+            view.fit(token: state.fitRequest)
+            view.step(state.zoomStep)
+        }
         view.setImage(image)
         view.handlers = handlers
         view.setFocus(focus)
@@ -100,7 +106,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate {
     private lazy var doubleTap = UITapGestureRecognizer(target: self, action: #selector(onDoubleTap(_:)))
     private lazy var singleTap = UITapGestureRecognizer(target: self, action: #selector(onSingleTap(_:)))
     var onTap: ((CGPoint) -> Void)? {
-        didSet { singleTap.isEnabled = onTap != nil }
+        didSet { singleTap.isEnabled = onTap != nil && !magnifier }
     }
 
     @objc private func onSingleTap(_ recognizer: UITapGestureRecognizer) {
@@ -209,6 +215,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate {
         singleTap.require(toFail: doubleTap)
         singleTap.isEnabled = false
         addGestureRecognizer(singleTap)
+        setupMac()
         configureInput()
     }
 
@@ -218,6 +225,21 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     private func configureInput() {
+        if magnifier {
+            // 放大镜：鼠标只管缩放，不画、不点选；滚轮和触控板双指照样能移动画面。
+            panGestureRecognizer.isEnabled = true
+            panGestureRecognizer.minimumNumberOfTouches = 2
+            doubleTap.isEnabled = false
+            singleTap.isEnabled = false
+            imageView.handlers = nil
+            scrub.isEnabled = true
+            magnifyTap.isEnabled = true
+            return
+        }
+        scrub.isEnabled = false
+        magnifyTap.isEnabled = false
+        panGestureRecognizer.isEnabled = true
+        singleTap.isEnabled = onTap != nil
         let drawing = handlers != nil
         panGestureRecognizer.minimumNumberOfTouches = drawing ? 2 : 1
         delaysContentTouches = !drawing
@@ -272,6 +294,93 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate {
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         centerContent()
+        if Platform.isMac { MacCanvasState.shared.zoom = zoomScale }
+    }
+
+    // MARK: Mac：放大镜
+
+    /// 放大镜打开时：单击放大、⌥ 单击缩小、按住左右拖动缩放；画笔和拖动画面暂停。
+    var magnifier = false {
+        didSet {
+            guard magnifier != oldValue else { return }
+            configureInput()
+        }
+    }
+
+    private var fitToken = 0
+    private lazy var scrub = UIPanGestureRecognizer(target: self, action: #selector(onScrub(_:)))
+    private lazy var magnifyTap = UITapGestureRecognizer(target: self, action: #selector(onMagnifyTap(_:)))
+    private var scrubStart: (scale: CGFloat, point: CGPoint, view: CGPoint)?
+
+    /// 顶栏的"适合窗口"：每点一次 token 加一，看到新的就缩回整张图。
+    func fit(token: Int) {
+        guard token != fitToken else { return }
+        fitToken = token
+        setZoomScale(1, animated: true)
+    }
+
+    private var stepToken = 0
+
+    /// 菜单里的放大 / 缩小：以画面中间为中心。
+    func step(_ command: (id: Int, factor: CGFloat)) {
+        guard command.id != stepToken else { return }
+        stepToken = command.id
+        guard command.factor > 0 else { return }
+        let center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        let point = convert(CGPoint(x: contentOffset.x + center.x, y: contentOffset.y + center.y), to: imageView)
+        UIView.animate(withDuration: 0.2) {
+            self.zoom(to: self.zoomScale * command.factor, keeping: point, at: center)
+        }
+        reportViewport()
+    }
+
+    private func setupMac() {
+        guard Platform.isMac else { return }
+        // 滚轮照常上下左右移动画面（放大以后用）；缩放用放大镜或触控板双指捏合。
+        scrub.maximumNumberOfTouches = 1
+        scrub.isEnabled = false
+        addGestureRecognizer(scrub)
+        magnifyTap.isEnabled = false
+        addGestureRecognizer(magnifyTap)
+    }
+
+    /// 以 viewPoint（画布可见区域里的位置）下面的那一点为中心缩放到 scale。
+    private func zoom(to scale: CGFloat, keeping point: CGPoint, at viewPoint: CGPoint) {
+        let s = min(max(scale, minimumZoomScale), maximumZoomScale)
+        setZoomScale(s, animated: false)
+        centerContent()
+        var offset = CGPoint(x: point.x * s - viewPoint.x, y: point.y * s - viewPoint.y)
+        offset.x = min(max(offset.x, -contentInset.left), max(-contentInset.left, contentSize.width - bounds.width + contentInset.right))
+        offset.y = min(max(offset.y, -contentInset.top), max(-contentInset.top, contentSize.height - bounds.height + contentInset.bottom))
+        contentOffset = offset
+    }
+
+    private func visible(_ location: CGPoint) -> CGPoint {
+        CGPoint(x: location.x - contentOffset.x, y: location.y - contentOffset.y)
+    }
+
+    @objc private func onScrub(_ g: UIPanGestureRecognizer) {
+        switch g.state {
+        case .began:
+            scrubStart = (zoomScale, g.location(in: imageView), visible(g.location(in: self)))
+        case .changed:
+            guard let start = scrubStart else { return }
+            // 往右拖放大，往左拖缩小。
+            let dx = g.translation(in: self).x
+            zoom(to: start.scale * exp(dx * 0.008), keeping: start.point, at: start.view)
+        default:
+            scrubStart = nil
+            reportViewport()
+        }
+    }
+
+    @objc private func onMagnifyTap(_ g: UITapGestureRecognizer) {
+        let out = g.modifierFlags.contains(.alternate)
+        UIView.animate(withDuration: 0.2) {
+            self.zoom(to: self.zoomScale * (out ? 0.5 : 2), keeping: g.location(in: self.imageView),
+                      at: self.visible(g.location(in: self)))
+        }
+        reportViewport()
     }
 
     @objc private func onDoubleTap(_ recognizer: UITapGestureRecognizer) {

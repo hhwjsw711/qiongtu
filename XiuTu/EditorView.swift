@@ -208,6 +208,14 @@ struct EditorView: View {
             }
             if let initialTool { start(initialTool) }
             #if DEBUG
+            if let n = Int(ProcessInfo.processInfo.environment["XIUTU_ZOOMIN"] ?? "") {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                MacCanvasState.shared.magnifier = true
+                for _ in 0..<n {
+                    MacCanvasState.shared.zoomIn()
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                }
+            }
             // 调试用：XIUTU_TOOL=adjust / ai:remove 打开后直接进某个工具，方便截图检查面板。
             if let name = ProcessInfo.processInfo.environment["XIUTU_TOOL"] {
                 if name.hasPrefix("ai:"), let group = AIPresetGroup(rawValue: String(name.dropFirst(3))) {
