@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import com.taoo.xiutu.ai.AISettings
 import com.taoo.xiutu.core.DraftStore
+import com.taoo.xiutu.ui.GenderSetting
 import com.taoo.xiutu.ui.Theme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
         HistoryStore.init(applicationContext)
         FavoriteFaceStore.init(applicationContext)
         DraftStore.init(applicationContext)
+        GenderSetting.init(applicationContext)
         setContent { XiuTuTheme { AppNav() } }
     }
 }

@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.taoo.xiutu.ui.FeatureTile
+import com.taoo.xiutu.ui.GenderSetting
+import com.taoo.xiutu.ui.GenderToggle
 import com.taoo.xiutu.ui.ImageTile
 import com.taoo.xiutu.ui.Theme
 import com.taoo.xiutu.ui.XSlider
@@ -88,9 +90,11 @@ fun MakeupPanel(s: MakeupSession) {
 private fun Header(s: MakeupSession) {
     val tabs = s.category.tabs
     val multi = s.category.isLocal && s.faces.size > 1
-    if (tabs.isEmpty() && !multi) return
+    val look = s.category == MakeupCategory.LOOK
+    if (tabs.isEmpty() && !multi && !look) return
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (look) GenderToggle()
         Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             tabs.forEachIndexed { index, title ->
                 val on = s.tab == index
@@ -145,7 +149,7 @@ private fun AmountSlider(s: MakeupSession) {
 @Composable
 private fun Options(s: MakeupSession) {
     val (list, crop) = s.makeupOptions()
-    val listKey = "${s.faceIndex}|${s.category.name}|${s.tab}"
+    val listKey = "${s.faceIndex}|${s.category.name}|${s.tab}|${GenderSetting.isMale}"
     LaunchedEffect(listKey, s.faces.size) { s.prepareThumbs(list, crop) }
     key(listKey) {
         Row(

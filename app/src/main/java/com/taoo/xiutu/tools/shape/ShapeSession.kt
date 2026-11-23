@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.taoo.xiutu.ai.AIPresetGroup
+import com.taoo.xiutu.ai.MalePresets
 import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.editor.EditorModel
 import com.taoo.xiutu.editor.ModeSelectable
@@ -31,6 +32,8 @@ import com.taoo.xiutu.ml.FaceDetector
 import com.taoo.xiutu.ml.PersonSegmenter
 import com.taoo.xiutu.ui.Chip
 import com.taoo.xiutu.ui.FeatureTile
+import com.taoo.xiutu.ui.GenderSetting
+import com.taoo.xiutu.ui.GenderToggle
 import com.taoo.xiutu.ui.IconTile
 import com.taoo.xiutu.ui.LabeledSlider
 import com.taoo.xiutu.ui.SegmentBar
@@ -630,7 +633,8 @@ class ShapeSession(model: EditorModel) : ToolSession(model, Tool.SHAPE), ModeSel
                     }
                 }
             }
-            for (look in ShapeAI.looks) {
+            GenderToggle(Modifier.padding(top = 14.dp).padding(horizontal = 4.dp))
+            for (look in if (GenderSetting.isMale) MalePresets.shapeLooks else ShapeAI.looks) {
                 FeatureTile(look.symbol, look.title, badge = "AI") { model.startAIPreset(look, AIPresetGroup.BODY) }
             }
         }

@@ -434,4 +434,8 @@ private val SYMBOLS: Map<String, ImageVector> = mapOf(
     "circle.slash" to Icons.Filled.Block,
     "sunset.fill" to Icons.Filled.WbTwilight,
     "moon.circle.fill" to Icons.Filled.Brightness2,
+    // 男士美体、胡子
+    "figure.core.training" to Icons.Filled.SportsGymnastics,
+    "figure.strengthtraining.functional" to Icons.Filled.SportsMartialArts,
+    "mustache" to Icons.Filled.Face,
 )
