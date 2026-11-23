@@ -166,11 +166,52 @@ struct AIEndpoint {
     var highFidelity = false
 }
 
-/// API Key 存在系统钥匙串里，不进 UserDefaults，也不会跟着备份明文走。
+/// Mac 版的 API Key 存在本机文件里（~/Library/Application Support/穷图/keys.json，只有自己的账户能读写）。
+/// Mac 版没有带钥匙串权限的签名，每次重新编译、替换程序后钥匙串里的就读不到了，所以不放钥匙串。
+enum MacKeyFile {
+    private static var url: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("穷图", isDirectory: true).appendingPathComponent("keys.json")
+    }
+
+    private static func load() -> [String: String] {
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return dict
+    }
+
+    static func get(_ account: String) -> String? {
+        load()[account]
+    }
+
+    static func set(_ value: String, account: String) {
+        var dict = load()
+        dict[account] = value.isEmpty ? nil : value
+        let fm = FileManager.default
+        let dir = url.deletingLastPathComponent()
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        guard let data = try? JSONEncoder().encode(dict) else { return }
+        try? data.write(to: url, options: .atomic)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+}
+
+/// API Key 存在系统钥匙串里，不进 UserDefaults，也不会跟着备份明文走。（Mac 版存本地文件，见 MacKeyFile）
 enum Keychain {
     private static let service = "com.taoo.xiutu.apikey"
 
     static func get(_ account: String) -> String {
+        if Platform.isMac {
+            if let value = MacKeyFile.get(account) { return value }
+            // 以前存进钥匙串的（第一次装的那一版）：读得到就搬到本地文件里。
+            let old = keychainGet(account)
+            if !old.isEmpty { MacKeyFile.set(old, account: account) }
+            return old
+        }
+        return keychainGet(account)
+    }
+
+    private static func keychainGet(_ account: String) -> String {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -185,6 +226,10 @@ enum Keychain {
     }
 
     static func set(_ value: String, account: String) {
+        if Platform.isMac {
+            MacKeyFile.set(value, account: account)
+            return
+        }
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

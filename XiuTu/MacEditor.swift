@@ -108,12 +108,18 @@ extension EditorView {
                 Rectangle().fill(MacTheme.line).frame(width: 1)
                 macInspector
                     .frame(width: 372)
+                    .frame(maxHeight: .infinity)
                     .background(MacTheme.panel)
                     .disabled(model.recipeStatus != nil)
             }
+            // 中间这一层永远只占窗口剩下的高度，顶栏、状态栏不会被挤出去。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .layoutPriority(-1)
             Rectangle().fill(MacTheme.line).frame(height: 1)
             macStatusBar
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MacTheme.canvas)
         .background {
             // Ctrl+Z / Ctrl+Shift+Z 也能撤销、重做（⌘Z 在菜单栏里）。
@@ -230,9 +236,13 @@ extension EditorView {
                         .background(MacTheme.header.opacity(0.6))
                 }
                 Rectangle().fill(MacTheme.line).frame(height: 1)
-                panel(for: tool)
-                    .padding(.top, 6)
-                Spacer(minLength: 0)
+                // 面板再高也只在这一块里上下滚，不会把整个窗口往上顶。
+                ScrollView(.vertical) {
+                    panel(for: tool)
+                        .padding(.top, 6)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxHeight: .infinity)
             }
     }
 
@@ -266,12 +276,59 @@ extension EditorView {
                     .buttonStyle(.plain)
                     .foregroundStyle(Theme.accent)
             }
+            MacAIStatus(running: model.aiRunning) { showSettings = true }
         }
         .font(.system(size: 11).monospacedDigit())
         .foregroundStyle(Theme.dim)
         .padding(.horizontal, 12)
         .frame(height: 24)
         .background(MacTheme.chrome)
+    }
+}
+
+// MARK: - 状态栏里的 AI 状态
+
+/// 状态栏右边：现在用哪家 AI、Key 填没填、正在生成，以及这家累计花了多少。点一下打开设置。
+struct MacAIStatus: View {
+    var running = false
+    var open: () -> Void
+    private let settings = AISettings.shared
+
+    var body: some View {
+        let provider = settings.active
+        let ready = settings.isConfigured(provider)
+        let stats = settings.stats(provider)
+        Button(action: open) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(running ? Theme.accent : (ready ? Color.green : Color.red))
+                    .frame(width: 7, height: 7)
+                Text("AI：\(provider.shortTitle)")
+                if ready {
+                    Text(settings.config(provider).model).lineLimit(1)
+                } else {
+                    Text("未设置 API Key").foregroundStyle(Color(red: 1, green: 0.45, blue: 0.4))
+                }
+                if running {
+                    Text("生成中…").foregroundStyle(Theme.accent)
+                }
+                if stats.requests > 0 {
+                    Text("·")
+                    Text("累计 \(stats.requests) 次 \(stats.images) 张")
+                    Text(costText(stats, currency: provider.currency))
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("AI 设置和用量")
+    }
+
+    private func costText(_ stats: AIProviderStats, currency: AICurrency) -> String {
+        if stats.unpriced == stats.requests { return "费用 —" }
+        let value = stats.cost < 0.01 && stats.cost > 0 ? String(format: "%.4f", stats.cost) : String(format: "%.2f", stats.cost)
+        return "约 \(currency.symbol)\(value)"
     }
 }
 
@@ -464,7 +521,7 @@ struct MacHistoryPanel: View {
             .overlay(alignment: .bottom) { Rectangle().fill(MacTheme.line).frame(height: open ? 1 : 0) }
             if open {
                 MacHistoryList(model: model)
-                    .frame(maxHeight: fill ? .infinity : 220)
+                    .frame(maxHeight: fill ? .infinity : 170)
                     .transition(.opacity)
             }
         }

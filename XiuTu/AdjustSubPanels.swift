@@ -307,6 +307,7 @@ private struct CurveSection: View {
             CurveEditor(points: model.adjust.curves.channels[channel], tint: Self.tints[channel]) { points in
                 model.changeAdjust { $0.curves.channels[channel] = points }
             }
+            .frame(height: Platform.isMac ? 300 : nil)
         }
     }
 }
