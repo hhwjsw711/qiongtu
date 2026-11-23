@@ -83,6 +83,10 @@ struct AIPanel: View {
                 BodyModeChips(model: model)
                 Spacer(minLength: 0)
                 ProviderMenu(openSettings: openSettings, compact: true)
+            } else if Platform.isMac {
+                // Mac：分组都在左边的工具栏里，这里不再重复，只留选服务商。
+                Spacer(minLength: 0)
+                ProviderMenu(openSettings: openSettings, compact: true)
             } else if model.aiGroup.isHair {
                 SegmentBar(items: AIPresetGroup.hairGroups, selected: model.aiGroup,
                            title: { $0.title }, symbol: { $0.symbol }) { model.aiGroup = $0 }

@@ -90,8 +90,11 @@ struct BeautyPanel: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                Chip(title: "AI 美颜", symbol: "sparkles", selected: model.beautyMode == .ai) { model.beautyMode = .ai }
-                Chip(title: "手动美颜", symbol: "slider.horizontal.3", selected: model.beautyMode == .manual) { model.beautyMode = .manual }
+                // Mac：一键美颜 / 手动美颜在左边的工具栏里选。
+                if !Platform.isMac {
+                    Chip(title: "AI 美颜", symbol: "sparkles", selected: model.beautyMode == .ai) { model.beautyMode = .ai }
+                    Chip(title: "手动美颜", symbol: "slider.horizontal.3", selected: model.beautyMode == .manual) { model.beautyMode = .manual }
+                }
                 Spacer()
                 if model.beautyMode == .ai { ProviderMenu(openSettings: openSettings, compact: true) }
             }

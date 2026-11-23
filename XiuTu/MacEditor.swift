@@ -243,8 +243,9 @@ extension EditorView {
     private func toolSection(_ tool: Tool) -> some View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Text(title(for: tool))
+                    Text(macTitle(tool))
                         .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
                     Spacer()
                     Button("取消") { model.cancelTool() }
                         .keyboardShortcut(.cancelAction)
@@ -275,6 +276,22 @@ extension EditorView {
             }
     }
 
+    /// 面板标题：左边工具栏里选的是哪一项也写上（分组按钮在 Mac 上不重复放）。
+    private func macTitle(_ tool: Tool) -> String {
+        switch tool {
+        case .ai:
+            let group = model.aiGroup
+            if group == .body || group.isHair { return "\(title(for: tool)) · \(group.title)" }
+            return "AI 修图 · \(group.title)"
+        case .beauty:
+            return model.beautyMode == .manual ? "手动美颜" : "一键美颜"
+        case .shape:
+            return model.shapeState.mode.title
+        default:
+            return title(for: tool)
+        }
+    }
+
     /// 有些工具在手机版底部确认栏中间放了分组切换，Mac 版放在面板标题下面。
     private func subTitle(for tool: Tool) -> AnyView? {
         switch tool {
@@ -282,7 +299,6 @@ extension EditorView {
         case .reshape: return AnyView(ReshapeTitle(model: model))
         case .makeup: return AnyView(MakeupTitle(model: model))
         case .skin: return AnyView(SkinTitle(model: model))
-        case .shape: return AnyView(ShapeTitle(model: model))
         default: return nil
         }
     }

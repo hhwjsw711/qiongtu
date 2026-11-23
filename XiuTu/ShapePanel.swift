@@ -392,8 +392,11 @@ struct ShapePanel: View {
     var body: some View {
         let state = model.shapeState
         VStack(spacing: 10) {
-            SegmentBar(items: ShapeMode.allCases, selected: state.mode, title: { $0.short }) {
-                model.switchShapeMode($0)
+            // Mac：五种做法都在左边的工具栏里选。
+            if !Platform.isMac {
+                SegmentBar(items: ShapeMode.allCases, selected: state.mode, title: { $0.short }) {
+                    model.switchShapeMode($0)
+                }
             }
             options
             slider
