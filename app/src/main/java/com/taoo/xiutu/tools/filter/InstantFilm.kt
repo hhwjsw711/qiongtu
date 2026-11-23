@@ -6,8 +6,10 @@ import com.taoo.xiutu.tools.color.ColorFx
 import com.taoo.xiutu.tools.color.ColorParams
 import com.taoo.xiutu.tools.color.Look
 import com.taoo.xiutu.tools.color.V3
+import kotlinx.serialization.Serializable
 
 /** 相纸颜色（0...1 的 sRGB）。 */
+@Serializable
 data class PaperColor(val r: Float, val g: Float, val b: Float) {
     constructor(hex: Int) : this(((hex shr 16) and 0xFF) / 255f, ((hex shr 8) and 0xFF) / 255f, (hex and 0xFF) / 255f)
 
@@ -171,6 +173,7 @@ class InstantPreset(val id: String, val title: String, val format: InstantFormat
  * 拍立得：按相纸比例裁切、加相纸边、套即显胶片的颜色。所有尺寸都从画面宽度按毫米比例换算，
  * 预览和原图导出一样。相纸上不加颗粒。
  */
+@Serializable
 data class InstantParams(
     val format: InstantFormat = InstantFormat.NONE,
     /** 相纸横过来用：写字的宽边转到右侧。 */

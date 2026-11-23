@@ -448,7 +448,7 @@ class EditorModel(val context: Context) {
                 options.size.maxSide?.let { out = Img.downscale(out, it) }
                 val data = Saver.encode(out, options)
                 Saver.saveToGallery(context, data, options.format)
-                if (HistoryStore.enabled) HistoryStore.add(context, data, options.format.ext, "修图")
+                if (HistoryStore.enabled) HistoryStore.add(context, data, options.format.ext, "修图", EditRecipe.from(list, proxy ?: src))
                 true
             }.getOrElse { it.printStackTrace(); false }
         }

@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.taoo.xiutu.core.Img
+import com.taoo.xiutu.editor.AIRecipe
 import com.taoo.xiutu.editor.AiToolApi
 import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.editor.EditorModel
@@ -120,6 +121,8 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
     private var resultReframed by mutableStateOf(false)
     /** 最近一次请求的实际用量。 */
     private var usageText by mutableStateOf<String?>(null)
+    /** 当前这次是怎么发起的（存进历史，套用步骤时用）；涂抹出来的是 null。 */
+    private var pendingRecipe: AIRecipe? = null
 
     private val strokes = ArrayList<MosaicStroke>()
     private var strokeCount by mutableIntStateOf(0)
@@ -227,8 +230,11 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
         val r = result ?: return null
         // 柔化只给整张重画的结果用；局部贴回的不柔化。
         val soft = if (frame == null && !hasRegion) soften else 0f
-        if (resultReframed) return AIEdit(r, emptyList(), reframed = true, soften = soft)
-        val e = AIEdit(r, strokes, frame, ellipse, strength, toneOnly, shared = lastEdit?.takeIf { it.result === r }, soften = soft)
+        val recipe = if (resultFused) null else pendingRecipe?.copy(strength = strength, toneOnly = toneOnly, soften = soft)
+        if (resultReframed) return AIEdit(r, emptyList(), reframed = true, soften = soft, recipe = recipe)
+        val e = AIEdit(
+            r, strokes, frame, ellipse, strength, toneOnly, shared = lastEdit?.takeIf { it.result === r }, soften = soft, recipe = recipe,
+        )
         lastEdit = e
         return e
     }
@@ -307,6 +313,9 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
         // 结果出来后再点同一条：算重新生成，加上这一轮的变化要求。
         regenRound = if (hasResult && basePrompt == lastPrompt) regenRound + 1 else 0
         lastPrompt = basePrompt
+        // 记下怎么发起的：涂抹出来的和原图位置绑定，不能套到别的照片上。
+        pendingRecipe = if (hasRegion || basePrompt.contains("涂抹区域")) null
+        else AIRecipe(group.name, basePrompt, presetTitle, masterCompose, faceCrop, hairCrop, reframe.name)
         ellipse = null
         resultReframed = false
         val composeBase = model.base
@@ -419,6 +428,29 @@ class AISession(model: EditorModel) : ToolSession(model, Tool.AI), AiToolApi {
 
     /** 换了服务商之后，把刚才那次请求原样重发。 */
     fun retryAI() = runAI()
+
+    /** 套用别的图的处理步骤：按记下的指令和设置在这张照片上重新生成。 */
+    fun replay(r: AIRecipe) {
+        AIPresetGroup.entries.firstOrNull { it.name == r.group }?.let { group = it }
+        error = null
+        prompt = r.prompt
+        presetTitle = r.presetTitle
+        masterCompose = r.masterCompose
+        faceCrop = r.faceCrop
+        hairCrop = r.hairCrop
+        reframe = AIReframe.entries.firstOrNull { it.name == r.reframe } ?: AIReframe.ORIGINAL
+        toneOnly = r.toneOnly
+        runAI()
+    }
+
+    /** 重新生成的结果出来后，按原来的强度、柔化和"只取光影色彩"来定。 */
+    fun applyReplayed(r: AIRecipe) {
+        if (!hasResult) return
+        strength = r.strength.coerceIn(0f, 1f)
+        soften = r.soften.coerceIn(0f, 1f)
+        toneOnly = r.toneOnly
+        render()
+    }
 
     private fun detectFaceThen(base: Bitmap, then: (FaceInfo?) -> Unit) {
         error = null

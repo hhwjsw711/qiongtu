@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import com.taoo.xiutu.ai.AIPreset
 import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.editor.Tool
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** 特效的分类。 */
 enum class EffectCategory(val title: String) {
@@ -125,12 +127,14 @@ enum class EffectKind(val id: String, val title: String, val category: EffectCat
  * 一步特效。参数全是相对值，预览和原图一样；随机的东西由 seed 决定。
  * mask 是进工具时对当时画面算好的主体蒙版（不透明灰度图，白 = 主体），比较时按引用。
  */
+@Serializable
 data class EffectParams(
     val id: String = "",
     val strength: Float = 0.7f,
     val variant: Int = 0,
     val seed: Long = 7,
-    val mask: Bitmap? = null,
+    /** 蒙版不存进处理步骤：套到别的照片上时按那张照片重新算。 */
+    @Transient val mask: Bitmap? = null,
 ) {
     val kind: EffectKind? get() = EffectKind.by(id)
 

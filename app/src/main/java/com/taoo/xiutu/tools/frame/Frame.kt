@@ -19,8 +19,10 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.serialization.Serializable
 
 /** 边框、背景里用到的颜色（sRGB，0...1）。 */
+@Serializable
 data class FrameColor(val r: Float, val g: Float, val b: Float) {
     val luma: Float get() = 0.299f * r + 0.587f * g + 0.114f * b
     val isLight: Boolean get() = luma > 0.6f
@@ -176,6 +178,7 @@ enum class FrameStyle {
  * 边框：给照片加一圈边（白边、拍立得、胶片边……）。所有尺寸都按照片短边的比例算。
  * inside = false：边框加在照片外面，画布变大；true：画布不变，边框往照片里占。
  */
+@Serializable
 data class FrameParams(
     val style: FrameStyle = FrameStyle.NONE,
     /** 边框（纸）的颜色。 */
