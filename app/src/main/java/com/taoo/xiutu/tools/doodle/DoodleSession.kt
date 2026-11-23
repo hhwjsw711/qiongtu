@@ -1,5 +1,6 @@
 package com.taoo.xiutu.tools.doodle
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PointF
 import androidx.compose.foundation.Image
@@ -33,6 +34,8 @@ import com.taoo.xiutu.editor.EditOp
 import com.taoo.xiutu.editor.EditorModel
 import com.taoo.xiutu.editor.Tool
 import com.taoo.xiutu.editor.ToolSession
+import com.taoo.xiutu.ml.FaceDetector
+import com.taoo.xiutu.ml.FaceInfo
 import com.taoo.xiutu.ui.Chip
 import com.taoo.xiutu.ui.IconTile
 import com.taoo.xiutu.ui.Theme
@@ -40,6 +43,10 @@ import com.taoo.xiutu.ui.XSlider
 import com.taoo.xiutu.ui.press
 import com.taoo.xiutu.ui.sym
 import com.taoo.xiutu.ui.tap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.random.Random
@@ -60,12 +67,26 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
     var size by mutableFloatStateOf(if (tool == Tool.MARK) 5f else 8f)
     /** 浓度：整笔的不透明度。 */
     var opacity by mutableFloatStateOf(1f)
+    /** 自动圆润：手指抬起后把这一笔修顺（画圈变圆、近似直线拉直）。 */
+    var smooth by mutableStateOf(prefs.getBoolean("smooth", true))
+        private set
+    /** 图案笔的随机分布。 */
+    var jitter by mutableStateOf(DoodleJitter())
+    /** 面板上显示分布滑条（代替颜色那一行）。 */
+    var showJitter by mutableStateOf(false)
+    /** 识别到的人脸（妆容笔用）；null = 还在识别。 */
+    private var faces: List<FaceInfo>? = null
+    /** 出错时的一句话（比如没找到人脸）。 */
+    var note by mutableStateOf<String?>(null)
+        private set
 
     /** 手指还没抬起来的这一笔。 */
     private var active: DoodleStroke? = null
     private var runtime: DoodleRuntime? = null
     private var reopenedFrom: List<DoodleStroke>? = null
     private val density = model.context.resources.displayMetrics.density
+    private val prefs get() = model.context.getSharedPreferences("doodle", Context.MODE_PRIVATE)
+    private var faceJob: Job? = null
 
     val canUndo get() = strokes.isNotEmpty()
     val canRedo get() = redo.isNotEmpty()
@@ -75,6 +96,16 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
     override fun start() {
         val b = model.base ?: return
         runtime = DoodleRuntime.create(b.width, b.height)
+        if (tool != Tool.DOODLE) return
+        // 妆容笔要知道五官在哪：进来就在后台找脸
+        faceJob = model.scope.launch {
+            faces = withContext(Dispatchers.Default) { runCatching { FaceDetector.detect(b) }.getOrDefault(emptyList()) }
+        }
+    }
+
+    override fun close() {
+        faceJob?.cancel()
+        faceJob = null
     }
 
     override fun reopen(op: EditOp) {
@@ -98,12 +129,31 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
         // 笔刷大小按屏幕上的 dp 算，存成相对图片长边的比例
         val width = (size * density * b.widthFactor / displayScale).coerceIn(0.0004f, 0.5f)
         val points = if (b.isShape && b != DoodleBrush.NUMBER) listOf(p, p) else listOf(p)
-        active = DoodleStroke(
+        var stroke = DoodleStroke(
             brush = b, points = points, width = width, color = color,
             opacity = if (b == DoodleBrush.ERASER) 1f else opacity,
             seed = Random.nextLong().let { if (it == 0L) 1L else it },
             number = if (b == DoodleBrush.NUMBER) strokes.count { it.brush == DoodleBrush.NUMBER } + 1 else 0,
         )
+        if (b.category == DoodleCategory.MAKEUP) {
+            // 妆容笔只画在对应的五官上；没找到脸就不画
+            val found = faces
+            if (found == null) {
+                note = "还在识别人脸"
+                return
+            }
+            val rt = runtime ?: return
+            val region = DoodleFaceRegion.region(b, found, rt.width, rt.height)
+            if (region.shapes.isEmpty()) {
+                note = "没找到人脸"
+                return
+            }
+            stroke = stroke.copy(region = region.shapes, feather = region.feather)
+        } else if (b.category == DoodleCategory.PATTERN) {
+            stroke = stroke.copy(jitter = jitter)
+        }
+        if (note != null) note = null
+        active = stroke
         render()
     }
 
@@ -136,8 +186,11 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
         }
         // 还什么都没画的时候，橡皮擦的这一笔也不用记
         if (s.brush == DoodleBrush.ERASER && strokes.none { it.brush != DoodleBrush.SPOT }) keep = false
+        val done = if (keep && smooth && !s.brush.isShape && s.brush != DoodleBrush.ERASER) {
+            s.copy(points = DoodleSmooth.process(s.points, rt.width, rt.height))
+        } else s
         if (keep) {
-            strokes = strokes + s
+            strokes = strokes + done
             redo = emptyList()
         }
         render()
@@ -184,6 +237,11 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
         b.category?.let { category = it }
     }
 
+    fun toggleSmooth() {
+        smooth = !smooth
+        prefs.edit().putBoolean("smooth", smooth).apply()
+    }
+
     private fun render() {
         val rt = runtime ?: return
         val list = strokes
@@ -205,6 +263,9 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            note?.let {
+                Text(it, fontSize = 13.sp, color = Color(1f, 0.45f, 0.4f), modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 for (c in DoodleCategory.entries) Chip(c.title, selected = category == c) { category = c }
                 Spacer(Modifier.weight(1f).widthIn(min = 4.dp))
@@ -213,11 +274,25 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
                 RoundButton("eraser", active = erasing) { erasing = !erasing }
                 RoundButton("trash", enabled = canUndo) { clearAll() }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SmallSlider("大小", size, 2f..40f, Modifier.weight(1f)) { size = it }
                 SmallSlider("浓度", opacity, 0.1f..1f, Modifier.weight(1f).alpha(if (erasing) 0.35f else 1f), enabled = !erasing) { opacity = it }
+                Box(
+                    Modifier.height(28.dp).clip(CircleShape).background(if (smooth) Theme.accent else Theme.chip)
+                        .tap { toggleSmooth() }.padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("圆润", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = if (smooth) Color.Black else Color.White)
+                }
             }
-            ColorRow(color) { color = it }
+            if (category == DoodleCategory.PATTERN) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    RoundButton("slider.horizontal.3", active = showJitter) { showJitter = !showJitter }
+                    if (showJitter) JitterSliders(Modifier.weight(1f)) else ColorRow(color) { color = it }
+                }
+            } else {
+                ColorRow(color) { color = it }
+            }
             key(category) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
@@ -225,6 +300,23 @@ class DoodleSession(model: EditorModel, tool: Tool) : ToolSession(model, tool) {
                 ) {
                     for (b in category.brushes) BrushTile(b, selected = !erasing && brush == b)
                 }
+            }
+        }
+    }
+
+    /** 图案笔的分布：间距、散布、大小差、角度、数量。 */
+    @Composable
+    private fun JitterSliders(modifier: Modifier) {
+        val j = jitter
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SmallSlider("间距", j.spacing, 0.3f..4f, Modifier.weight(1f)) { jitter = jitter.copy(spacing = it) }
+                SmallSlider("散布", j.scatter, 0f..3f, Modifier.weight(1f)) { jitter = jitter.copy(scatter = it) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SmallSlider("大小差", j.size, 0f..1f, Modifier.weight(1f)) { jitter = jitter.copy(size = it) }
+                SmallSlider("角度", j.angle, 0f..1f, Modifier.weight(1f)) { jitter = jitter.copy(angle = it) }
+                SmallSlider("数量", j.count, 1f..5f, Modifier.weight(1f)) { jitter = jitter.copy(count = it) }
             }
         }
     }

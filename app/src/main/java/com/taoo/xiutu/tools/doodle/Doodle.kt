@@ -75,6 +75,7 @@ enum class DoodleBrush(val title: String) {
     CRAYON("蜡笔"), CLOUD("云朵"), SPRAY("喷枪"), DASHED("虚线"), RAINBOW("彩虹"), NEON("霓虹"),
     BROW("眉笔"), EYELINER("眼线"), EYESHADOW("眼影"), BLUSH("腮红"), LIP("口红"), GLOW("高光"),
     STARS("星星"), HEARTS("爱心"), SPARKLES("闪光"), BUBBLES("泡泡"),
+    PETALS("樱花"), LEAVES("落叶"), RAINDROPS("雨滴"), SNOWFLAKES("雪花"), NOTES("音符"),
     ARROW("箭头"), LINE("直线"), RECT("方框"), ELLIPSE("圆圈"), BAR("高亮"), NUMBER("序号"), SPOT("聚光"),
     ERASER("橡皮");
 
@@ -83,7 +84,7 @@ enum class DoodleBrush(val title: String) {
         get() = when (this) {
             PEN, ARROW_PEN, MARKER, HIGHLIGHTER, PENCIL, CALLIGRAPHY, CRAYON, CLOUD, SPRAY, DASHED, RAINBOW, NEON -> DoodleCategory.PEN
             BROW, EYELINER, EYESHADOW, BLUSH, LIP, GLOW -> DoodleCategory.MAKEUP
-            STARS, HEARTS, SPARKLES, BUBBLES -> DoodleCategory.PATTERN
+            STARS, HEARTS, SPARKLES, BUBBLES, PETALS, LEAVES, RAINDROPS, SNOWFLAKES, NOTES -> DoodleCategory.PATTERN
             else -> null
         }
 
@@ -119,7 +120,7 @@ enum class DoodleBrush(val title: String) {
             CLOUD, SPRAY -> 3.2f
             EYESHADOW, GLOW -> 3.5f
             BLUSH -> 7f
-            STARS, HEARTS, SPARKLES, BUBBLES -> 3.2f
+            STARS, HEARTS, SPARKLES, BUBBLES, PETALS, LEAVES, RAINDROPS, SNOWFLAKES, NOTES -> 3.2f
             BAR, NUMBER, SPOT -> 1f
             ERASER -> 2.5f
         }
@@ -129,11 +130,12 @@ enum class DoodleBrush(val title: String) {
         get() = when (this) {
             HIGHLIGHTER -> 0.45f
             MARKER -> 0.9f
-            BROW -> 0.65f
-            EYESHADOW -> 0.55f
-            BLUSH -> 0.45f
-            LIP -> 0.7f
-            GLOW -> 0.5f
+            BROW -> 0.5f
+            EYELINER -> 0.75f
+            EYESHADOW -> 0.45f
+            BLUSH -> 0.35f
+            LIP -> 0.55f
+            GLOW -> 0.4f
             BAR -> 0.4f
             else -> 1f
         }
@@ -147,6 +149,10 @@ enum class DoodleBrush(val title: String) {
             BLUSH -> DoodleColor(0.95f, 0.5f, 0.45f)
             LIP -> DoodleColor(0.86f, 0.3f, 0.45f)
             GLOW -> DoodleColor.white
+            PETALS -> DoodleColor(1.0f, 0.72f, 0.8f)
+            LEAVES -> DoodleColor(0.9f, 0.48f, 0.15f)
+            RAINDROPS -> DoodleColor(0.72f, 0.88f, 1.0f)
+            SNOWFLAKES -> DoodleColor.white
             else -> null
         }
 
@@ -165,6 +171,7 @@ enum class DoodleBrush(val title: String) {
             HEARTS -> DoodleColor(1.0f, 0.35f, 0.5f)
             SPARKLES -> DoodleColor(0.55f, 0.8f, 1.0f)
             BUBBLES -> DoodleColor(0.6f, 0.9f, 1.0f)
+            NOTES -> DoodleColor(1.0f, 0.84f, 0.04f)
             else -> defaultColor ?: DoodleColor.white
         }
 
@@ -178,6 +185,9 @@ enum class DoodleBrush(val title: String) {
  * points：手绘是手指经过的点；形状是 [起点, 终点]；序号是 [位置]。
  * opacity 是整笔的不透明度（一笔之内自己叠到自己不会变深）。
  * seed：带随机散布的笔，预览和导出用同一个种子，画出来才一样。
+ * jitter：图案笔的随机分布；null = 默认值。
+ * region：妆容笔只画在这些范围里（五官）。每一项是一块：第一圈是外轮廓，后面的是挖掉的洞。归一化坐标。
+ * feather：范围边缘的羽化宽度（以图片长边为 1）。
  */
 data class DoodleStroke(
     val brush: DoodleBrush,
@@ -187,6 +197,23 @@ data class DoodleStroke(
     val opacity: Float = 1f,
     val seed: Long = 0,
     val number: Int = 0,
+    val jitter: DoodleJitter? = null,
+    val region: List<List<List<PointF>>> = emptyList(),
+    val feather: Float = 0f,
+)
+
+/** 图案笔的随机分布（像 Photoshop 画笔的散布、间距、大小抖动）。 */
+data class DoodleJitter(
+    /** 间距：相邻两个图案隔多远，按笔的粗细算。 */
+    val spacing: Float = 1.25f,
+    /** 散布：图案离开手指路线多远，按笔的粗细算。 */
+    val scatter: Float = 0.35f,
+    /** 大小随机 0...1。 */
+    val size: Float = 0.5f,
+    /** 角度随机 0...1（1 = 随便转）。 */
+    val angle: Float = 0.2f,
+    /** 每个落点放几个图案。 */
+    val count: Float = 1f,
 )
 
 /** 涂鸦 / 标记这一步：画在图上的笔画。 */
@@ -213,9 +240,9 @@ class DoodleOp(strokes: List<DoodleStroke>) : EditOp {
 
     override fun reopens(tool: Tool) = tool == Tool.DOODLE || tool == Tool.MARK
 
-    /** 照 iOS tapDecoration：点中最上面那一笔；两个点以内的（形状、序号）打开标记，否则打开涂鸦。 */
+    /** 照 iOS tapDecoration：点中最上面那一笔；形状、序号打开标记，否则打开涂鸦（自动圆润拉直的线也只有两个点，按笔来分）。 */
     override fun hitTest(point: PointF, ratio: Float): Tool? {
         val s = strokes.lastOrNull { it.brush != DoodleBrush.ERASER && strokeHits(it.points, it.width, point, ratio) } ?: return null
-        return if (s.points.size <= 2) Tool.MARK else Tool.DOODLE
+        return if (s.brush.isShape) Tool.MARK else Tool.DOODLE
     }
 }
