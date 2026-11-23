@@ -208,7 +208,13 @@ data class CollagePicture(
     val flip: Boolean = false,
     /** 顺时针转了几个 90°。 */
     val quarterTurns: Int = 0,
-)
+    /** 拼接时沿拼接方向裁掉的比例：开头（竖拼 = 上面，横拼 = 左边）和结尾。 */
+    val cropStart: Float = 0f,
+    val cropEnd: Float = 0f,
+) {
+    /** 拼接时留下的比例。 */
+    val keep: Float get() = max(1f - cropStart - cropEnd, 0.05f)
+}
 
 enum class CollageMode(val title: String) { TEMPLATE("模板"), STITCH("拼接") }
 
@@ -235,7 +241,11 @@ data class CollageParams(
     val stitchGap: Float = 0f,
 ) {
     /** 只有正在编辑的这一张、没加别的图：等于没拼。 */
-    val isIdentity get() = pictures.isEmpty() || (pictures.size == 1 && pictures[0].isBase)
+    val isIdentity
+        get() = pictures.isEmpty() || (
+            pictures.size == 1 && pictures[0].isBase &&
+                (mode == CollageMode.TEMPLATE || (pictures[0].cropStart == 0f && pictures[0].cropEnd == 0f))
+            )
 
     /** 模板里放不下的图有几张。 */
     val hiddenCount get() = if (mode == CollageMode.TEMPLATE) max(0, pictures.size - layout.cells.size) else 0
@@ -253,11 +263,15 @@ data class CollageParams(
         return max(w, 1f) to max(h, 1f)
     }
 
-    /** 拼接时每张图沿拼接方向的"自然长度"：以另一边为 1。 */
-    private fun stitchLengths(refW: Float, refH: Float): List<Float> = pictures.indices.map { i ->
+    /** 拼接时每张图沿拼接方向的"自然长度"（没裁过的整张）：以另一边为 1。 */
+    fun stitchFullLengths(refW: Float, refH: Float): List<Float> = pictures.indices.map { i ->
         val (w, h) = pictureSize(i, refW, refH)
         if (vertical) h / w else w / h
     }
+
+    /** 拼接时每张图裁过之后沿拼接方向的长度。 */
+    private fun stitchLengths(refW: Float, refH: Float): List<Float> =
+        stitchFullLengths(refW, refH).mapIndexed { i, length -> length * pictures[i].keep }
 
     /** 拼出来的画布有多大（像素）。preview = true 时长图按预览的上限算；排版比例不受影响。 */
     fun canvasSize(refW: Float, refH: Float, preview: Boolean = false): Pair<Float, Float> = when (mode) {
@@ -378,7 +392,23 @@ data class CollageParams(
                 for ((index, rect) in rects.withIndex()) {
                     val img = source(index) ?: continue
                     val p = pictures[index]
-                    fill(canvas, img, p.quarterTurns, p.flip, rect, 0f, 0f, 1f, 0f, hq = !preview)
+                    if (p.cropStart > 0f || p.cropEnd > 0f) {
+                        // 沿拼接方向裁掉两头：整张图按没裁时的长度铺开，只露出留下的那一段。
+                        val full = (if (vertical) rect.height() else rect.width()) / p.keep
+                        val whole = if (vertical) {
+                            val top = rect.top - full * p.cropStart
+                            RectF(rect.left, top, rect.right, top + full)
+                        } else {
+                            val left = rect.left - full * p.cropStart
+                            RectF(left, rect.top, left + full, rect.bottom)
+                        }
+                        canvas.save()
+                        canvas.clipRect(rect)
+                        fill(canvas, img, p.quarterTurns, p.flip, whole, 0f, 0f, 1f, 0f, hq = !preview)
+                        canvas.restore()
+                    } else {
+                        fill(canvas, img, p.quarterTurns, p.flip, rect, 0f, 0f, 1f, 0f, hq = !preview)
+                    }
                 }
             }
         }

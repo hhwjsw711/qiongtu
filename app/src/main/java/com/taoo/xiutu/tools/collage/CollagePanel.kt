@@ -1,6 +1,7 @@
 package com.taoo.xiutu.tools.collage
 
 import android.graphics.Bitmap
+import android.graphics.RectF
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -335,6 +337,7 @@ private fun StitchCanvas(s: CollageSession) {
                                     drawRect(Theme.accent, Offset(f.left, f.top), Size(f.width(), f.height()), style = Stroke(2.5f * dp))
                                 }
                             }
+                            StitchHandles(s, frames, vertical, if (vertical) sh else sw)
                         }
                     }
                     AddSlot(
@@ -346,6 +349,83 @@ private fun StitchCanvas(s: CollageSession) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) { content() }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+                }
+            }
+        }
+    }
+}
+
+/** 拼接时一条可以推的边上的把手放在哪。 */
+private class StitchHandle(val edge: StitchEdge, val x: Float, val y: Float)
+
+/** 每条可以推的边放一个把手：第一张的开头、每两张之间、最后一张的结尾。 */
+private fun stitchHandles(frames: List<RectF>, vertical: Boolean, inset: Float): List<StitchHandle> {
+    val first = frames.firstOrNull() ?: return emptyList()
+    val last = frames.last()
+    val out = ArrayList<StitchHandle>()
+    out += if (vertical) StitchHandle(StitchEdge.Start, first.centerX(), first.top + inset)
+    else StitchHandle(StitchEdge.Start, first.left + inset, first.centerY())
+    for (i in 0 until frames.size - 1) {
+        val a = frames[i]
+        out += if (vertical) StitchHandle(StitchEdge.Seam(i), a.centerX(), a.bottom)
+        else StitchHandle(StitchEdge.Seam(i), a.right, a.centerY())
+    }
+    out += if (vertical) StitchHandle(StitchEdge.End, last.centerX(), last.bottom - inset)
+    else StitchHandle(StitchEdge.End, last.right - inset, last.centerY())
+    return out
+}
+
+/** 拼接时推拉裁剪的把手。along = 拼好的图在屏幕上沿拼接方向有多长（像素）。 */
+@Composable
+private fun StitchHandles(s: CollageSession, frames: List<RectF>, vertical: Boolean, along: Float) {
+    val density = LocalDensity.current.density
+    val currentAlong by rememberUpdatedState(along)
+    val touchW = 60f * density
+    val touchH = 44f * density
+    for (handle in stitchHandles(frames, vertical, 14f * density)) {
+        key(handle.edge) {
+            val symbol = when (handle.edge) {
+                StitchEdge.Start -> if (vertical) "arrow.up" else "arrow.left"
+                is StitchEdge.Seam -> if (vertical) "arrow.up.arrow.down" else "arrow.left.arrow.right"
+                StitchEdge.End -> if (vertical) "arrow.down" else "arrow.right"
+            }
+            Box(
+                Modifier.offset { IntOffset((handle.x - touchW / 2).roundToInt(), (handle.y - touchH / 2).roundToInt()) }
+                    .size(60.dp, 44.dp)
+                    .pointerInput(handle.edge, vertical) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            down.consume()
+                            // 按下那一刻量一次屏幕上一个单位（图的宽 / 高）有多长，拖动中画布变长变短也不跟着变。
+                            val start = s.params.pictures
+                            val (refW, refH) = s.reference
+                            val full = s.params.stitchFullLengths(refW, refH)
+                            val kept = full.indices.sumOf { (full[it] * start[it].keep).toDouble() }.toFloat()
+                            val gap = s.params.stitchGap * max(full.size - 1, 0)
+                            val unit = currentAlong / max(kept + gap, 0.0001f)
+                            // 把手跟着画布挪动，所以按每一帧的位移累加，而不是看当前位置。
+                            var moved = 0f
+                            while (true) {
+                                val ev = awaitPointerEvent()
+                                val c = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!c.pressed) break
+                                val d = c.position - c.previousPosition
+                                val step = if (vertical) d.y else d.x
+                                c.consume()
+                                if (step == 0f) continue
+                                moved += step
+                                s.stitchPush(handle.edge, moved / max(unit, 0.0001f), start)
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier.size(if (vertical) 46.dp else 26.dp, if (vertical) 26.dp else 46.dp)
+                        .shadow(3.dp, CircleShape).clip(CircleShape).background(Theme.accent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(sym(symbol), null, tint = Color.Black, modifier = Modifier.size(15.dp))
                 }
             }
         }
