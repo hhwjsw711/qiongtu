@@ -38,9 +38,34 @@ struct ImageFileDocument: FileDocument {
 }
 
 /// 菜单栏要用的：当前窗口里正在编辑的那张图。
+@MainActor
 struct MacEditorCommands {
     let model: EditorModel
     let save: () -> Void
+
+    /// 开着工具也能撤销：先把这个工具收起来（相当于应用后再撤掉，重做还能找回来）。
+    var canUndo: Bool { model.canUndo || (model.tool != nil && idle) }
+    var canRedo: Bool { model.canRedo || (model.tool != nil && idle && model.redoAvailable) }
+
+    private var idle: Bool { !model.isBusy && !model.aiRunning && !model.isLoading }
+
+    func undo() {
+        if model.tool != nil {
+            guard idle else { return }
+            model.commitTool { model.undo() }
+        } else {
+            model.undo()
+        }
+    }
+
+    func redo() {
+        if model.tool != nil {
+            guard idle else { return }
+            model.commitTool { model.redo() }
+        } else {
+            model.redo()
+        }
+    }
 }
 
 private struct MacEditorKey: FocusedValueKey {
@@ -65,6 +90,10 @@ extension EditorView {
         return (usable ? "\(base)-穷图" : "穷图") + "." + ext
     }
 
+    var macCommands: MacEditorCommands {
+        MacEditorCommands(model: model, save: { if !model.isLoading { showSave = true } })
+    }
+
     /// 顶栏 + （左工具栏 | 画布 | 右面板）+ 状态栏。
     var macLayout: some View {
         VStack(spacing: 0) {
@@ -86,6 +115,15 @@ extension EditorView {
             macStatusBar
         }
         .background(MacTheme.canvas)
+        .background {
+            // Ctrl+Z / Ctrl+Shift+Z 也能撤销、重做（⌘Z 在菜单栏里）。
+            Group {
+                Button("") { macCommands.undo() }.keyboardShortcut("z", modifiers: .control)
+                Button("") { macCommands.redo() }.keyboardShortcut("z", modifiers: [.control, .shift])
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+        }
     }
 
     private var imagePixels: CGSize? {
@@ -116,10 +154,10 @@ extension EditorView {
             }
             .padding(.leading, 4)
             Spacer(minLength: 16)
-            MacIconButton(symbol: "arrow.uturn.backward", help: "撤销 ⌘Z") { model.undo() }
-                .disabled(!model.canUndo)
-            MacIconButton(symbol: "arrow.uturn.forward", help: "重做 ⇧⌘Z") { model.redo() }
-                .disabled(!model.canRedo)
+            MacIconButton(symbol: "arrow.uturn.backward", help: "撤销 ⌘Z / Ctrl+Z") { macCommands.undo() }
+                .disabled(!macCommands.canUndo)
+            MacIconButton(symbol: "arrow.uturn.forward", help: "重做 ⇧⌘Z / Ctrl+Shift+Z") { macCommands.redo() }
+                .disabled(!macCommands.canRedo)
             Spacer(minLength: 16)
             MacHoldButton(symbol: "square.split.2x1", help: "按住看原图") { model.comparing = $0 }
                 .opacity(model.isLoading ? 0.3 : 1)
@@ -158,9 +196,18 @@ extension EditorView {
 
     // MARK: 右边的面板
 
-    @ViewBuilder
     private var macInspector: some View {
-        if let tool = model.tool {
+        VStack(spacing: 0) {
+            if let tool = model.tool {
+                toolSection(tool)
+            } else {
+                Spacer(minLength: 0)
+            }
+            MacHistoryPanel(model: model, fill: model.tool == nil)
+        }
+    }
+
+    private func toolSection(_ tool: Tool) -> some View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Text(title(for: tool))
@@ -187,12 +234,6 @@ extension EditorView {
                     .padding(.top, 6)
                 Spacer(minLength: 0)
             }
-        } else {
-            VStack(spacing: 0) {
-                MacSectionHeader(title: "历史记录")
-                MacHistoryList(model: model)
-            }
-        }
     }
 
     /// 有些工具在手机版底部确认栏中间放了分组切换，Mac 版放在面板标题下面。
@@ -390,6 +431,47 @@ struct MacToolStrip: View {
 
 // MARK: - 历史记录
 
+/// 右边最下面的"历史记录"：点标题折叠 / 展开，记住上次的状态。没开工具时占满右边，开着工具时放在工具下面。
+struct MacHistoryPanel: View {
+    let model: EditorModel
+    var fill: Bool
+    @AppStorage("mac.historyOpen") private var open = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { open.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                        .foregroundStyle(Theme.dim)
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
+                    Text("历史记录").font(.system(size: 12, weight: .bold))
+                    Spacer()
+                    Text("\(model.historyIndex + 1) / \(model.historyStates.count)")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(Theme.dim)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(MacTheme.header)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .overlay(alignment: .top) { Rectangle().fill(MacTheme.line).frame(height: 1) }
+            .overlay(alignment: .bottom) { Rectangle().fill(MacTheme.line).frame(height: open ? 1 : 0) }
+            if open {
+                MacHistoryList(model: model)
+                    .frame(maxHeight: fill ? .infinity : 220)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxHeight: fill && open ? .infinity : nil, alignment: .top)
+    }
+}
+
 /// 打开之后每一步的状态，点一下回到那一步（之后的步骤变灰，还能点回来）。
 struct MacHistoryList: View {
     let model: EditorModel
@@ -409,13 +491,16 @@ struct MacHistoryList: View {
             }
             .onChange(of: current) { proxy.scrollTo(current, anchor: .center) }
         }
-        .disabled(model.tool != nil || model.isBusy)
+        .disabled(model.isBusy || model.aiRunning)
     }
 
     private func row(_ i: Int, states: [[EditOp]], current: Int) -> some View {
         let step = i == 0 ? nil : states[i].last.map { EditRecipe.step($0, inputSize: { .zero }) }
         let on = i == current
-        return Button { model.jumpHistory(to: i) } label: {
+        return Button {
+            // 开着工具时先应用它（Mac 上切到别处都是自动应用），再跳过去。
+            if model.tool != nil { model.commitTool { model.jumpHistory(to: i) } } else { model.jumpHistory(to: i) }
+        } label: {
             HStack(spacing: 10) {
                 Image(systemName: step?.symbol ?? "photo")
                     .font(.system(size: 13))

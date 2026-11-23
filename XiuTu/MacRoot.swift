@@ -470,12 +470,12 @@ struct MacCommands: Commands {
                 .disabled(editor == nil || editor?.model.tool != nil)
         }
         CommandGroup(replacing: .undoRedo) {
-            Button("撤销") { editor?.model.undo() }
+            Button("撤销") { editor?.undo() }
                 .keyboardShortcut("z")
-                .disabled(!(editor?.model.canUndo ?? false))
-            Button("重做") { editor?.model.redo() }
+                .disabled(!(editor?.canUndo ?? false))
+            Button("重做") { editor?.redo() }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!(editor?.model.canRedo ?? false))
+                .disabled(!(editor?.canRedo ?? false))
         }
     }
 }

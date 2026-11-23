@@ -230,8 +230,7 @@ struct EditorView: View {
             Task { await model.addToHistory(data, options: options) }
             show("已导出")
         }
-        .focusedSceneValue(\.macEditor, embedded ? nil : MacEditorCommands(
-            model: model, save: { if !model.isLoading { showSave = true } }))
+        .focusedSceneValue(\.macEditor, embedded ? nil : macCommands)
         .onChange(of: model.revision) { MacSession.shared.editorDirty = model.hasEdits && !isSaved }
         .onChange(of: savedRevision) { MacSession.shared.editorDirty = model.hasEdits && !isSaved }
         .confirmationDialog("放弃当前修改？", isPresented: $confirmDiscard, titleVisibility: .visible) {

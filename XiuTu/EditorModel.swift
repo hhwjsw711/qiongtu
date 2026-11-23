@@ -233,6 +233,8 @@ final class EditorModel {
 
     var canUndo: Bool { !undoStates.isEmpty && tool == nil }
     var canRedo: Bool { !redoStates.isEmpty && tool == nil }
+    /// 有没有能重做的（不管有没有开着工具）。
+    var redoAvailable: Bool { !redoStates.isEmpty }
     var hasEdits: Bool { !ops.isEmpty }
     /// 打开之后有没有动过（单独编辑图层内容时，一开始就可能带着已有的步骤）。
     var hasChanges: Bool { !undoStates.isEmpty }
