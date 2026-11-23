@@ -120,6 +120,8 @@ struct EditorView: View {
     var restoreDraft = false
     /// 打开后把历史图库里这张图的处理步骤套到这张照片上。
     var recipeID: UUID? = nil
+    /// 自动拼图：打开拼接页并摆好这组截图。
+    var stitchJob: AutoStitchJob? = nil
     let initialTool: Tool?
     var onClose: () -> Void
 
@@ -232,6 +234,7 @@ struct EditorView: View {
                 await model.load(assetID: assetID)
             }
             if let initialTool { start(initialTool) }
+            if let stitchJob { model.collageLoadAutoStitch(stitchJob) }
             if let recipeID, let recipe = HistoryStore.shared.recipe(recipeID) { model.startRecipe(recipe) }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }

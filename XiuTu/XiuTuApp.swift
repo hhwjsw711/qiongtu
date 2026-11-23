@@ -27,6 +27,8 @@ enum Route: Hashable {
     /// 选一张新照片，套用历史图库里某张图的处理步骤。
     case recipePicker(UUID)
     case recipe(assetID: String, historyID: UUID)
+    /// 自动拼图找到的一组截图：直接打开拼接页，接缝已经对好，可以再手动推。
+    case autoStitch(AutoStitchJob)
 }
 
 struct RootView: View {
@@ -41,7 +43,7 @@ struct RootView: View {
                      startRaw: { path.append(.rawPicker) },
                      startHistory: { path.append(.history) },
                      startFavorite: { path.append(.favoriteFace) },
-                     openFile: { url in path.append(.editorFile(url)) })
+                     openStitch: { job in path.append(.autoStitch(job)) })
                 .navigationDestination(for: Route.self) { route in
                     switch route {
                     case .picker(let tool):
@@ -94,6 +96,10 @@ struct RootView: View {
                             onPick: { asset in path.append(.recipe(assetID: asset, historyID: id)) },
                             onClose: { if !path.isEmpty { path.removeLast() } }
                         )
+                    case .autoStitch(let job):
+                        EditorView(assetID: "", fileURL: job.files.first, stitchJob: job, initialTool: .collage) {
+                            if !path.isEmpty { path.removeLast() }
+                        }
                     case .recipe(let asset, let id):
                         EditorView(assetID: asset, recipeID: id, initialTool: nil) {
                             if !path.isEmpty { path.removeLast() }
@@ -141,7 +147,7 @@ struct HomeView: View {
     var startHistory: () -> Void = {}
     var startFavorite: () -> Void = {}
     /// 自动拼好的长图直接进编辑器。
-    var openFile: (URL) -> Void = { _ in }
+    var openStitch: (AutoStitchJob) -> Void = { _ in }
 
     @State private var showSettings = false
     @State private var stitching = false
@@ -270,14 +276,14 @@ struct HomeView: View {
         }
     }
 
-    /// 找最近一组连续截图拼成长图，拼好直接进编辑器。
+    /// 找最近一组连续截图，算好接缝后打开拼接页。
     private func autoStitch() {
         stitching = true
         Task {
             let result = await AutoStitchLoader.run()
             stitching = false
             switch result {
-            case .success(let url): openFile(url)
+            case .success(let job): openStitch(job)
             case .failure(let failure): stitchError = failure.message
             }
         }

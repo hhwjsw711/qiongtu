@@ -310,6 +310,38 @@ extension EditorModel {
 
     // MARK: 拼接
 
+    /// 自动拼图打开时：切到竖拼，第一张是正在编辑的这张，后面几张从文件读，按算好的位置裁好两头。
+    func collageLoadAutoStitch(_ job: AutoStitchJob) {
+        guard tool == .collage, job.files.count == job.cropStart.count, job.files.count == job.cropEnd.count else { return }
+        collageSetMode(.stitch)
+        collageState.params.vertical = true
+        collageState.params.stitchGap = 0
+        collageState.loading = true
+        Task { [weak self] in
+            let rest = Array(job.files.dropFirst())
+            let loaded = await Task.detached(priority: .userInitiated) {
+                rest.map { url in (try? Data(contentsOf: url)).flatMap { CollageImport.picture(from: $0) } }
+            }.value
+            guard let self, self.tool == .collage else { return }
+            self.collageState.loading = false
+            var pics = [CollagePicture(isBase: true)]
+            var starts = [job.cropStart[0]], ends = [job.cropEnd[0]]
+            for (k, picture) in loaded.enumerated() {
+                guard let picture else { continue }
+                pics.append(picture)
+                starts.append(job.cropStart[k + 1])
+                ends.append(job.cropEnd[k + 1])
+            }
+            for i in pics.indices {
+                pics[i].cropStart = min(max(starts[i], 0), 0.95)
+                pics[i].cropEnd = min(max(ends[i], 0), 0.95 - pics[i].cropStart)
+            }
+            self.collageState.params.pictures = pics
+            self.renderCollage()
+            for url in job.files { try? FileManager.default.removeItem(at: url) }
+        }
+    }
+
     func collageSetVertical(_ vertical: Bool) {
         guard collageState.params.vertical != vertical else { return }
         collageState.params.vertical = vertical

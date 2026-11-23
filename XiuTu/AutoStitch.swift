@@ -6,17 +6,18 @@ import Foundation
 /// 2. 中间的内容是滚动的：找出相邻两张之间滚了多少，后一张只接上新出现的那一截。
 /// 全部在本机算，只用 Core Graphics。
 enum AutoStitch {
-    struct Result {
-        let image: CGImage
-        /// 有几处接缝没对上（直接整截接上去了）。
-        let unmatched: Int
+    /// 拼法：按顺序用哪几张，每张沿竖直方向裁掉开头、结尾多少（占整张高的比例）。
+    struct Plan {
+        let order: [Int]
+        let cropStart: [CGFloat]
+        let cropEnd: [CGFloat]
     }
 
     /// 每一行压成这么多个灰度值来比较。
     private static let columns = 48
 
     /// images 按时间先后排好；自动判断是往下滚还是往上滚。
-    static func stitch(_ images: [CGImage]) -> Result? {
+    static func plan(_ images: [CGImage]) -> Plan? {
         guard images.count >= 2, let w = images.first?.width, let h = images.first?.height,
               images.allSatisfy({ $0.width == w && $0.height == h }) else { return nil }
         let sigs = images.compactMap { Signature($0) }
@@ -41,7 +42,6 @@ enum AutoStitch {
         let content = h - header - footer
         // 第一张从最上面开始（带着标题栏）。
         var pieces: [(index: Int, from: Int)] = [(order[0], 0)]
-        var unmatched = 0
         for k in 1..<order.count {
             let a = sigs[order[k - 1]], b = sigs[order[k]]
             if let m = overlap(a, b, header: header, footer: footer), m.error < 9 {
@@ -49,30 +49,16 @@ enum AutoStitch {
                 if m.shift <= 0 { continue } // 一模一样的截图，跳过
                 pieces.append((order[k], header + content - m.shift))
             } else {
-                unmatched += 1
+                // 没对上：整截内容接上去，留给用户在拼接页里手动推。
                 pieces.append((order[k], header))
             }
         }
 
-        // 拼：每一块从 from 到内容区底部，最后一块带上底部固定的那一截。
-        let bodyEnd = h - footer
-        var heights = pieces.map { bodyEnd - $0.from }
-        heights[heights.count - 1] += footer
-        let total = heights.reduce(0, +)
-        guard total > 0, let ctx = CGContext(data: nil, width: w, height: total, bitsPerComponent: 8, bytesPerRow: 0,
-                                             space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-                                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        var y = 0 // 从上往下
-        for (i, piece) in pieces.enumerated() {
-            let img = images[piece.index]
-            let rows = heights[i]
-            guard let cut = img.cropping(to: CGRect(x: 0, y: piece.from, width: w, height: rows)) else { continue }
-            // CGContext 原点在左下。
-            ctx.draw(cut, in: CGRect(x: 0, y: total - y - rows, width: w, height: rows))
-            y += rows
-        }
-        guard let out = ctx.makeImage() else { return nil }
-        return Result(image: out, unmatched: unmatched)
+        // 每一块从 from 到内容区底部，最后一块带上底部固定的那一截。
+        let fh = CGFloat(h)
+        return Plan(order: pieces.map(\.index),
+                    cropStart: pieces.map { CGFloat($0.from) / fh },
+                    cropEnd: pieces.indices.map { $0 == pieces.count - 1 ? 0 : CGFloat(footer) / fh })
     }
 
     // MARK: 每一行的缩略
@@ -172,7 +158,14 @@ import ImageIO
 import Photos
 import UniformTypeIdentifiers
 
-/// 主页"自动拼图"：从相册里找最近一组连续的截图（同样大小、前后几分钟内截的），拼成长图存到临时文件。
+/// 自动拼图的结果：按顺序的截图文件，和每张沿竖直方向裁掉的开头、结尾比例。打开拼接页时预先摆好。
+struct AutoStitchJob: Hashable {
+    let files: [URL]
+    let cropStart: [CGFloat]
+    let cropEnd: [CGFloat]
+}
+
+/// 主页"自动拼图"：从相册里找最近一组连续的截图（同样大小、前后几分钟内截的），算好怎么接。
 enum AutoStitchLoader {
     enum Failure: Error {
         case noAccess, notEnough, failed
@@ -191,24 +184,28 @@ enum AutoStitchLoader {
     /// 相邻两张截图最多隔多久还算同一组。
     static let maxGap: TimeInterval = 5 * 60
 
-    static func run() async -> Result<URL, Failure> {
+    /// 找到一组截图并算好怎么接；截图原文件存到临时目录，交给拼接页。
+    static func run() async -> Result<AutoStitchJob, Failure> {
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else { return .failure(.noAccess) }
         let assets = recentGroup()
         guard assets.count >= 2 else { return .failure(.notEnough) }
-        var images: [CGImage] = []
+        var loaded: [(data: Data, image: CGImage)] = []
         for asset in assets {
-            if let image = await load(asset) { images.append(image) }
+            if let item = await load(asset) { loaded.append(item) }
         }
-        guard images.count >= 2 else { return .failure(.notEnough) }
-        return await Task.detached(priority: .userInitiated) { () -> Result<URL, Failure> in
-            guard let result = AutoStitch.stitch(images) else { return .failure(.failed) }
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("autostitch-\(UUID().uuidString).png")
-            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-                return .failure(.failed)
+        guard loaded.count >= 2 else { return .failure(.notEnough) }
+        return await Task.detached(priority: .userInitiated) { () -> Result<AutoStitchJob, Failure> in
+            guard let plan = AutoStitch.plan(loaded.map(\.image)) else { return .failure(.failed) }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("autostitch-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var files: [URL] = []
+            for (k, index) in plan.order.enumerated() {
+                let url = dir.appendingPathComponent("\(k)")
+                guard (try? loaded[index].data.write(to: url)) != nil else { return .failure(.failed) }
+                files.append(url)
             }
-            CGImageDestinationAddImage(dest, result.image, nil)
-            return CGImageDestinationFinalize(dest) ? .success(url) : .failure(.failed)
+            return .success(AutoStitchJob(files: files, cropStart: plan.cropStart, cropEnd: plan.cropEnd))
         }.value
     }
 
@@ -234,7 +231,7 @@ enum AutoStitchLoader {
         return group.reversed()
     }
 
-    private static func load(_ asset: PHAsset) async -> CGImage? {
+    private static func load(_ asset: PHAsset) async -> (data: Data, image: CGImage)? {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
@@ -246,7 +243,7 @@ enum AutoStitchLoader {
                     continuation.resume(returning: nil)
                     return
                 }
-                continuation.resume(returning: image)
+                continuation.resume(returning: (data, image))
             }
         }
     }
