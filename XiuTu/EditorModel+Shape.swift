@@ -443,12 +443,13 @@ extension EditorModel {
             renderShape()
             return
         }
-        guard let cg = baseUIImage?.cgImage, let base = basePreview else { return }
+        guard let cg = baseUIImage?.cgImage else { return }
         shapeState.protectBusy = true
         Task { [weak self] in
             let found = await Task.detached(priority: .userInitiated) { () -> (CGImage?, CGImage?) in
+                // 让出来的缝现在直接用旁边的背景填，不再提前补一张"没有人的背景"。
                 guard let mask = PersonSegmenter.mask(for: cg) else { return (nil, nil) }
-                return (mask, Renderer.shared.cgImage(ShapeEngine.backgroundPlate(base, lock: mask)))
+                return (mask, nil)
             }.value
             guard let self, self.tool == .shape else { return }
             self.shapeState.protectBusy = false

@@ -868,7 +868,8 @@ enum ShapeEngine {
         return background.composited(over: plate).cropped(to: extent)
     }
 
-    /// 按位移场取样。lock 不为空时"背景保护"：只有人跟着变形，背景保持原样，人让出来的地方用补好的背景填。
+    /// 按位移场取样。lock 不为空时"背景保护"：只有人跟着变形，背景保持原样，人让出来的地方用旁边拉过来的背景填。
+    /// （plate 现在不用了，留着参数是为了调用的地方不用改。）
     /// image 的原点必须在 (0,0)。
     static func warp(_ image: CIImage, field: ShapeField, lock: CGImage? = nil, plate: CGImage? = nil) -> CIImage {
         let extent = image.extent
@@ -905,7 +906,6 @@ enum ShapeEngine {
 
         let person = stretched(lock, to: extent, data: true)
         let moved = displaced(person)
-        let background = plate.map { stretched($0, to: extent, data: false) } ?? backgroundPlate(image, lock: lock)
         // 只有人的轮廓真的动过的地方才换成补好的背景，其余地方一个像素都不动。
         let changed = person
             .applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: moved])
@@ -919,7 +919,9 @@ enum ShapeEngine {
             ])
             .applyingFilter("CIColorClamp")
             .cropped(to: extent)
-        let behind = background.applyingFilter("CIBlendWithMask", parameters: [
+        // 人让出来的那条缝：用跟着拉过来的背景填，保留原来的纹理和清晰度。
+        // （以前用四周背景晕开的颜色糊上，背景有栏杆、灯光、建筑时会出现一片虚影。）
+        let behind = warped.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: image,
             kCIInputMaskImageKey: changed,
         ]).cropped(to: extent)
