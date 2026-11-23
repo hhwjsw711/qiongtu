@@ -211,7 +211,17 @@ struct MacLayersPanel: View {
             Button(action: action) {
                 HStack(spacing: 8) {
                     ZStack {
-                        Color(white: 0.2)
+                        // 棋盘格底：透明的地方看得出来是透明的。
+                        Canvas { ctx, size in
+                            let cell: CGFloat = 5
+                            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.85)))
+                            for row in 0..<Int(size.height / cell) + 1 {
+                                for col in 0..<Int(size.width / cell) + 1 where (row + col) % 2 == 0 {
+                                    ctx.fill(Path(CGRect(x: CGFloat(col) * cell, y: CGFloat(row) * cell, width: cell, height: cell)),
+                                             with: .color(Color(white: 0.65)))
+                                }
+                            }
+                        }
                         if let image {
                             Image(uiImage: image).resizable().scaledToFit().padding(1)
                         } else if let symbol {
@@ -250,7 +260,24 @@ struct MacLayersPanel: View {
         let layer = selected
         let index = layer.flatMap { l in layers.firstIndex { $0.id == l.id } } ?? 0
         return HStack(spacing: 2) {
-            MacIconButton(symbol: "plus.square", help: "新建图层（打开图片）") { picking = true }
+            Menu {
+                Button { ensureLayers { model.addBlankLayer() } } label: {
+                    Label("新建空白图层", systemImage: "square.dashed")
+                }
+                Button { picking = true } label: {
+                    Label("打开图片…", systemImage: "photo")
+                }
+            } label: {
+                Image(systemName: "plus.square")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 32, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("新建图层")
             MacIconButton(symbol: "square.on.square", help: "复制图层") {
                 if let id = layer?.id { model.duplicateLayer(id) }
             }

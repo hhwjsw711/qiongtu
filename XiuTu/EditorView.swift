@@ -212,6 +212,8 @@ struct EditorView: View {
             if let name = ProcessInfo.processInfo.environment["XIUTU_TOOL"] {
                 if name.hasPrefix("ai:"), let group = AIPresetGroup(rawValue: String(name.dropFirst(3))) {
                     handle(.ai(group))
+                } else if name == "layers+blank" {
+                    model.open(.layers) { model.addBlankLayer() }
                 } else if let tool = Tool(rawValue: name) {
                     start(tool)
                 }

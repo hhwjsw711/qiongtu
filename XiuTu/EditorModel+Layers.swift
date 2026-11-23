@@ -261,6 +261,25 @@ extension EditorModel {
         }
     }
 
+    /// 新建一个透明的空白图层：和画面一样的比例，铺满整个画面，之后可以在上面画、加东西。
+    func addBlankLayer() {
+        guard tool == .layers, !layerState.busy else { return }
+        let canvas = layerState.background?.extent.size ?? CGSize(width: 1, height: 1)
+        guard canvas.width > 0, canvas.height > 0 else { return }
+        let k = min(1, 2048 / max(canvas.width, canvas.height))
+        let size = CGRect(x: 0, y: 0, width: max((canvas.width * k).rounded(), 1), height: max((canvas.height * k).rounded(), 1))
+        let number = layerState.counter + 1
+        guard var layer = ImageLayer.make(name: "图层 \(number)", image: CIImage(color: .clear).cropped(to: size)) else { return }
+        layer.width = 1
+        layer.center = CGPoint(x: 0.5, y: 0.5)
+        layerState.note = nil
+        layerState.counter = number
+        layerState.layers.append(layer)
+        layerState.selectedID = layer.id
+        layerState.changed = true
+        renderLayers()
+    }
+
     /// 让图层整个落在画面里时的宽度比例。fill = 最多占画面的多少。
     private static func fittingWidth(aspect: CGFloat, canvas: CGSize, fill: CGFloat) -> CGFloat {
         guard canvas.width > 0, canvas.height > 0, aspect > 0 else { return fill }
