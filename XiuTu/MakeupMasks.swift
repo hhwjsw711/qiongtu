@@ -224,7 +224,7 @@ extension MKFace {
                     let t = 0.08 + 0.84 * CGFloat(s) / 12
                     let base = e.lower.at(t) - e.up * (e.width * 0.015)
                     top.append(base)
-                    bottom.append(base - e.up * (e.width * 0.085 * pow(sin(.pi * CGFloat(s) / 12), 0.7)))
+                    bottom.append(base - e.up * (e.width * 0.085 * pow(sin(CGFloat.pi * CGFloat(s) / 12), 0.7)))
                 }
                 p.fill(top + bottom.reversed())
             }
