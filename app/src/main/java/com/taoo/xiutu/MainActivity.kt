@@ -94,6 +94,7 @@ fun AppNav() {
                 startHistory = { nav.navigate("history") },
                 startRaw = { nav.navigate("raw") },
                 startFavorite = { nav.navigate("favoriteFace") },
+                openFile = { f -> nav.navigate("editorFile/${enc(f.absolutePath)}") },
             )
         }
         composable("picker/{target}/{tool}") { e ->
