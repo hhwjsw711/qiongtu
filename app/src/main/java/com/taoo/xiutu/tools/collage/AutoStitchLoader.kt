@@ -3,8 +3,6 @@ package com.taoo.xiutu.tools.collage
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Rect
 import android.net.Uri
 import android.provider.MediaStore
 import com.taoo.xiutu.core.Img
@@ -14,7 +12,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
-/** 主页"自动拼图"：从相册里找最近一组连续的截图（同样大小、前后几分钟内截的），拼成长图存到临时文件。 */
+/** 自动拼图的结果：按顺序的截图文件，和每张沿竖直方向裁掉的开头、结尾比例。打开拼接页时预先摆好。 */
+class AutoStitchJob(val files: List<File>, val cropStart: List<Float>, val cropEnd: List<Float>)
+
+/** 主页"自动拼图"：从相册里找最近一组连续的截图（同样大小、前后几分钟内截的），算好怎么接。 */
 object AutoStitchLoader {
     enum class Failure(val message: String) {
         NO_ACCESS("没有相册权限"),
@@ -22,8 +23,11 @@ object AutoStitchLoader {
         FAILED("这几张截图拼不起来"),
     }
 
-    /** 成功时 file 是拼好的长图，失败时 failure 说明原因。 */
-    class Result(val file: File?, val failure: Failure?)
+    /** 成功时 job 是算好的拼法，失败时 failure 说明原因。 */
+    class Result(val job: AutoStitchJob?, val failure: Failure?)
+
+    /** 主页算好、等编辑器拿走的那一组。 */
+    var pending: AutoStitchJob? = null
 
     /** 一组最多几张。 */
     const val MAX_COUNT = 15
@@ -47,8 +51,8 @@ object AutoStitchLoader {
         }
         if (sigs.size < 2) return@withContext Result(null, Failure.NOT_ENOUGH)
         val plan = AutoStitch.plan(sigs, navBarHeight(context, sigs[0].width, sigs[0].rows)) ?: return@withContext Result(null, Failure.FAILED)
-        val file = runCatching { draw(context, used, plan) }.getOrNull()
-        if (file == null) Result(null, Failure.FAILED) else Result(file, null)
+        val job = runCatching { copy(context, used, plan, sigs[0].rows) }.getOrNull()
+        if (job == null) Result(null, Failure.FAILED) else Result(job, null)
     }
 
     /** 截图和本机屏幕一样大（竖屏）时，底部系统导航栏 / 手势条的高度；别的设备截的图返回 0。 */
@@ -62,25 +66,27 @@ object AutoStitchLoader {
         return if (id > 0) res.getDimensionPixelSize(id) else (24 * dm.density).toInt()
     }
 
-    /** 按拼法把每一段画到长图上，存成 PNG。 */
-    private fun draw(context: Context, shots: List<Shot>, plan: AutoStitch.Plan): File? {
-        val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        var y = 0
-        for (piece in plan.pieces) {
-            val img = decode(context, shots[piece.index])
-            if (img != null && img.width == plan.width) {
-                canvas.drawBitmap(img, Rect(0, piece.from, plan.width, piece.from + piece.rows), Rect(0, y, plan.width, y + piece.rows), null)
-                img.recycle()
-            }
-            y += piece.rows
+    /** 用到的截图原文件复制到缓存目录，算出每张两头裁掉的比例。 */
+    private fun copy(context: Context, shots: List<Shot>, plan: AutoStitch.Plan, rows: Int): AutoStitchJob? {
+        // 上一次的临时文件用不着了
+        context.cacheDir.listFiles { f -> f.name.startsWith("autostitch-") }?.forEach { it.deleteRecursively() }
+        val dir = File(context.cacheDir, "autostitch-${UUID.randomUUID()}").apply { mkdirs() }
+        val h = rows.toFloat()
+        val files = ArrayList<File>()
+        val starts = ArrayList<Float>()
+        val ends = ArrayList<Float>()
+        for ((k, piece) in plan.pieces.withIndex()) {
+            val file = File(dir, "$k")
+            val ok = context.contentResolver.openInputStream(shots[piece.index].uri)?.use { input ->
+                file.outputStream().use { input.copyTo(it) }
+                true
+            } ?: false
+            if (!ok) return null
+            files += file
+            starts += piece.from / h
+            ends += (rows - piece.from - piece.rows) / h
         }
-        // 上一次拼的临时文件用不着了
-        context.cacheDir.listFiles { f -> f.name.startsWith("autostitch-") }?.forEach { it.delete() }
-        val file = File(context.cacheDir, "autostitch-${UUID.randomUUID()}.png")
-        val ok = file.outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        out.recycle()
-        return if (ok) file else null
+        return AutoStitchJob(files, starts, ends)
     }
 
     /** 原尺寸读一张截图；读出来的大小和相册记的不一样就不要。 */

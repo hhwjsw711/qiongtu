@@ -29,6 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.taoo.xiutu.editor.EditorModel
+import com.taoo.xiutu.tools.collage.AutoStitchLoader
 import com.taoo.xiutu.editor.EditorScreen
 import com.taoo.xiutu.editor.Tool
 import com.taoo.xiutu.godcover.GodCoverScreen
@@ -94,7 +95,7 @@ fun AppNav() {
                 startHistory = { nav.navigate("history") },
                 startRaw = { nav.navigate("raw") },
                 startFavorite = { nav.navigate("favoriteFace") },
-                openFile = { f -> nav.navigate("editorFile/${enc(f.absolutePath)}") },
+                openStitch = { job -> AutoStitchLoader.pending = job; nav.navigate("autoStitch") },
             )
         }
         composable("picker/{target}/{tool}") { e ->
@@ -133,6 +134,17 @@ fun AppNav() {
             val context = LocalContext.current
             val model = remember { EditorModel(context).also { it.draftEnabled = true; it.load(file) } }
             EditorScreen(model, null) { nav.popBackStack() }
+        }
+        composable("autoStitch") {
+            val context = LocalContext.current
+            val job = remember { AutoStitchLoader.pending.also { AutoStitchLoader.pending = null } }
+            val file = job?.files?.firstOrNull()
+            if (job == null || file == null) {
+                LaunchedEffect(Unit) { nav.popBackStack() }
+            } else {
+                val model = remember { EditorModel(context).also { it.draftEnabled = true; it.load(file) } }
+                EditorScreen(model, Tool.COLLAGE, stitchJob = job) { nav.popBackStack() }
+            }
         }
         composable("draft") {
             val context = LocalContext.current

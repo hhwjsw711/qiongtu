@@ -260,6 +260,38 @@ class CollageSession(model: EditorModel) : ToolSession(model, Tool.COLLAGE) {
 
     // MARK: 拼接
 
+    /** 自动拼图打开时：切到竖拼，第一张是正在编辑的这张，后面几张从文件读，按算好的位置裁好两头。 */
+    fun loadAutoStitch(job: AutoStitchJob) {
+        if (closed || job.files.size != job.cropStart.size || job.files.size != job.cropEnd.size) return
+        setMode(CollageMode.STITCH)
+        params = params.copy(vertical = true, stitchGap = 0f)
+        loading = true
+        val context = model.context
+        model.scope.launch {
+            val loaded = withContext(Dispatchers.Default) {
+                job.files.drop(1).map { CollageImport.picture(context, android.net.Uri.fromFile(it)) }
+            }
+            if (closed) return@launch
+            loading = false
+            val pics = mutableListOf(CollagePicture(isBase = true))
+            val starts = mutableListOf(job.cropStart[0])
+            val ends = mutableListOf(job.cropEnd[0])
+            loaded.forEachIndexed { k, picture ->
+                if (picture == null) return@forEachIndexed
+                pics += picture
+                starts += job.cropStart[k + 1]
+                ends += job.cropEnd[k + 1]
+            }
+            for (i in pics.indices) {
+                val s0 = starts[i].coerceIn(0f, 0.95f)
+                pics[i] = pics[i].copy(cropStart = s0, cropEnd = ends[i].coerceIn(0f, 0.95f - s0))
+            }
+            params = params.copy(pictures = pics)
+            renderCollage()
+            job.files.firstOrNull()?.parentFile?.deleteRecursively()
+        }
+    }
+
     fun setVertical(vertical: Boolean) {
         if (params.vertical == vertical) return
         params = params.copy(vertical = vertical)
