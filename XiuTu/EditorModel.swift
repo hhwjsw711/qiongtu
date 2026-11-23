@@ -1632,7 +1632,7 @@ final class EditorModel {
         renderAI()
     }
 
-    private func faceKey(_ style: BeautyStyle) -> String { "\(faceIndex)|\(style.id)" }
+    private func faceKey(_ style: BeautyStyle) -> String { "\(faceIndex)|\(style.prompt)" }  // 男女两套有同名的风格，按指令区分
 
     func isFaceStyleCached(_ style: BeautyStyle) -> Bool { cachedFaceKeys.contains(faceKey(style)) }
 
