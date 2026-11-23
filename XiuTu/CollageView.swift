@@ -356,7 +356,6 @@ struct CollageLayoutIcon: View {
 struct CollagePanel: View {
     @Bindable var model: EditorModel
 
-    @State private var picked: [PhotosPickerItem] = []
     @State private var page: Page = .layout
     @State private var styleKey: StyleKey = .gap
 
@@ -430,12 +429,8 @@ struct CollagePanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 4)
-        .photosPicker(isPresented: $model.collageState.pickerShown, selection: $picked,
-                      maxSelectionCount: state.pickerLimit, matching: .images)
-        .onChange(of: picked) { _, items in
-            guard !items.isEmpty else { return }
+        .imageSource(isPresented: $model.collageState.pickerShown, limit: state.pickerLimit) { items in
             model.collageImport(items)
-            picked = []
         }
     }
 
@@ -455,14 +450,29 @@ struct CollagePanel: View {
     private var layoutPage: some View {
         let state = model.collageState
         return VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+            HScroll {
+                HRow(spacing: 6) {
                     ratioChip("全部", selected: state.ratioFilter == nil) { model.collageSetRatioFilter(nil) }
                     ForEach(CollageRatio.allCases) { ratio in
                         ratioChip(ratio.title, selected: state.ratioFilter == ratio) { model.collageSetRatioFilter(ratio) }
                     }
                 }
             }
+            if Platform.isMac {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 6)], spacing: 6) {
+                        ForEach(model.collageChoices) { choice in
+                            Button { model.collageSelect(choice.layout, ratio: choice.ratio) } label: {
+                                CollageLayoutIcon(layout: choice.layout, ratio: choice.ratio.value,
+                                                  selected: choice.layout == state.params.layout && choice.ratio == state.params.ratio)
+                            }
+                            .buttonStyle(PressStyle())
+                        }
+                    }
+                        .padding(.vertical, 1)
+                }
+                .frame(height: 360)
+            } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHGrid(rows: rows, spacing: 6) {
                     ForEach(model.collageChoices) { choice in
@@ -479,6 +489,7 @@ struct CollagePanel: View {
             .frame(height: 112)
             .padding(.horizontal, -16)
             .contentMargins(.horizontal, 16, for: .scrollContent)
+            }
         }
     }
 
@@ -543,8 +554,8 @@ struct CollagePanel: View {
             Text("底色")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.dim)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(CollageColor.palette.indices, id: \.self) { index in
                         let color = CollageColor.palette[index]
                         Button {
@@ -651,8 +662,8 @@ struct CollagePanel: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.accent)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
+            HScroll {
+                HRow(spacing: 4) {
                     IconTile(symbol: "arrow.triangle.2.circlepath", title: "换图") { model.collageRequestReplace(index) }
                     IconTile(symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right", title: "翻转") {
                         model.collageFlip(index)

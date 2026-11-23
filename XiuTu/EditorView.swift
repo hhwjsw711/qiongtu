@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 底部一级菜单。
 enum MainTab: String, CaseIterable, Identifiable {
@@ -125,63 +126,35 @@ struct EditorView: View {
     let initialTool: Tool?
     var onClose: () -> Void
 
-    @State private var model = EditorModel()
-    private var embedded: Bool { layerEdit != nil }
-    private var isSaved: Bool { savedRevision == model.revision }
-    @State private var confirmDiscard = false
-    @State private var saving = false
-    @State private var toast: String?
-    @State private var toastID = 0
-    @State private var editingTextID: UUID?
-    @State private var editingPrompt = false
-    @State private var showSettings = false
-    @State private var showSave = false
+    @State var model = EditorModel()
+    var embedded: Bool { layerEdit != nil }
+    var isSaved: Bool { savedRevision == model.revision }
+    @State var confirmDiscard = false
+    @State var saving = false
+    @State var toast: String?
+    @State var toastID = 0
+    @State var editingTextID: UUID?
+    @State var editingPrompt = false
+    @State var showSettings = false
+    @State var showSave = false
     /// 上次保存成功时的编辑状态；和现在一样就说明保存之后没再改过。
-    @State private var savedRevision: Int?
+    @State var savedRevision: Int?
     /// 底部一级菜单停在哪一项：进出工具时记住，不跳回"工具"。
-    @State private var mainTab: MainTab = .tools
+    @State var mainTab: MainTab = .tools
+    /// Mac：导出到文件。
+    @State var exportDoc: ImageFileDocument?
+    @State var exporting = false
+    @State var exportRevision = 0
+    @State var exportOptions = SaveOptions.saved
 
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                topBar.frame(height: 52)
-                canvas
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .overlay(alignment: .top) {
-                        // 单独编辑图层内容时，标出改的是哪一层。
-                        if let layerEdit {
-                            Text("正在编辑：\(layerEdit.title)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 5)
-                                .background(Theme.accent, in: Capsule())
-                                .padding(.top, 6)
-                                .allowsHitTesting(false)
-                        }
-                        if let status = model.recipeStatus {
-                            HStack(spacing: 10) {
-                                ProgressView().tint(.black).controlSize(.small)
-                                Text(status)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .lineLimit(1)
-                                Button("停止") { model.stopRecipe() }
-                                    .font(.system(size: 13, weight: .bold))
-                            }
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(Theme.accent, in: Capsule())
-                            .padding(.top, 6)
-                            .padding(.horizontal, 16)
-                        }
-                    }
-                bottom
-                    .disabled(model.recipeStatus != nil)
+            if Platform.isMac {
+                macLayout
+            } else {
+                phoneLayout
             }
-            .ignoresSafeArea(.keyboard)
             if model.isLoading || model.isBusy || saving {
                 ProgressView()
                     .controlSize(.large)
@@ -201,7 +174,7 @@ struct EditorView: View {
                         .padding(.horizontal, 18)
                         .padding(.vertical, 11)
                         .background(Color(white: 0.2).opacity(0.95), in: Capsule())
-                        .padding(.bottom, 230)
+                        .padding(.bottom, Platform.isMac ? 48 : 230)
                 }
                 .transition(.opacity)
                 .allowsHitTesting(false)
@@ -234,20 +207,89 @@ struct EditorView: View {
                 await model.load(assetID: assetID)
             }
             if let initialTool { start(initialTool) }
+            #if DEBUG
+            // 调试用：XIUTU_TOOL=adjust / ai:remove 打开后直接进某个工具，方便截图检查面板。
+            if let name = ProcessInfo.processInfo.environment["XIUTU_TOOL"] {
+                if name.hasPrefix("ai:"), let group = AIPresetGroup(rawValue: String(name.dropFirst(3))) {
+                    handle(.ai(group))
+                } else if let tool = Tool(rawValue: name) {
+                    start(tool)
+                }
+            }
+            #endif
             if let stitchJob { model.collageLoadAutoStitch(stitchJob) }
             if let recipeID, let recipe = HistoryStore.shared.recipe(recipeID) { model.startRecipe(recipe) }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showSave) { SaveSheet(model: model, onSave: save) }
+        .fileExporter(isPresented: $exporting, document: exportDoc,
+                      contentType: exportDoc?.type ?? .jpeg, defaultFilename: exportName) { result in
+            guard case .success = result, let data = exportDoc?.data else { return }
+            savedRevision = exportRevision
+            let options = exportOptions
+            Task { await model.addToHistory(data, options: options) }
+            show("已导出")
+        }
+        .focusedSceneValue(\.macEditor, embedded ? nil : MacEditorCommands(
+            model: model, save: { if !model.isLoading { showSave = true } }))
+        .onChange(of: model.revision) { MacSession.shared.editorDirty = model.hasEdits && !isSaved }
+        .onChange(of: savedRevision) { MacSession.shared.editorDirty = model.hasEdits && !isSaved }
         .confirmationDialog("放弃当前修改？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("放弃修改", role: .destructive) { leave() }
             Button("继续编辑", role: .cancel) {}
         }
     }
 
+    /// 画布，加上顶上的"正在编辑某图层""套用步骤"提示。
+    var canvasArea: some View {
+        canvas
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .overlay(alignment: .top) {
+                // 单独编辑图层内容时，标出改的是哪一层。
+                if let layerEdit {
+                    Text("正在编辑：\(layerEdit.title)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Theme.accent, in: Capsule())
+                        .padding(.top, 6)
+                        .allowsHitTesting(false)
+                }
+                if let status = model.recipeStatus {
+                    HStack(spacing: 10) {
+                        ProgressView().tint(.black).controlSize(.small)
+                        Text(status)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                        Button("停止") { model.stopRecipe() }
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Theme.accent, in: Capsule())
+                    .padding(.top, 6)
+                    .padding(.horizontal, 16)
+                }
+            }
+    }
+
+    /// 手机：顶栏、画布、底部菜单从上往下排。
+    private var phoneLayout: some View {
+        VStack(spacing: 0) {
+            topBar.frame(height: 52)
+            canvasArea
+            bottom
+                .disabled(model.recipeStatus != nil)
+        }
+        .ignoresSafeArea(.keyboard)
+    }
+
     // MARK: 顶栏
 
-    private var topBar: some View {
+    var topBar: some View {
         HStack(spacing: 4) {
             if model.tool == nil {
                 Button {
@@ -313,7 +355,7 @@ struct EditorView: View {
     // MARK: 画布
 
     @ViewBuilder
-    private var canvas: some View {
+    var canvas: some View {
         switch model.tool {
         case .some(.crop):
             CropCanvas(model: model)
@@ -393,8 +435,13 @@ struct EditorView: View {
         }
     }
 
-    /// 图层：在照片上面再叠别的图。
-    private var layersButton: some View {
+    /// 图层：在照片上面再叠别的图。（Mac 上在左边的工具栏里）
+    @ViewBuilder
+    var layersButton: some View {
+        if !Platform.isMac { phoneLayersButton }
+    }
+
+    private var phoneLayersButton: some View {
         Button { start(.layers) } label: {
             Image(systemName: Tool.layers.symbol)
                 .font(.system(size: 16, weight: .semibold))
@@ -408,8 +455,13 @@ struct EditorView: View {
         .opacity(model.isLoading ? 0 : 1)
     }
 
-    /// 按住看修改前的样子。
-    private var compareButton: some View {
+    /// 按住看修改前的样子。（Mac 上在顶栏）
+    @ViewBuilder
+    var compareButton: some View {
+        if !Platform.isMac { phoneCompareButton }
+    }
+
+    private var phoneCompareButton: some View {
         Image(systemName: "square.split.2x1")
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(.white)
@@ -461,7 +513,7 @@ struct EditorView: View {
     }
 
     @ViewBuilder
-    private func panel(for tool: Tool) -> some View {
+    func panel(for tool: Tool) -> some View {
         switch tool {
         case .crop: CropPanel(model: model)
         case .filter: FilterPanel(model: model)
@@ -488,7 +540,7 @@ struct EditorView: View {
     }
 
     /// 底部确认栏中间的名字。AI 美体和手动美体都算"美体"。
-    private func title(for tool: Tool) -> String {
+    func title(for tool: Tool) -> String {
         if tool == .ai, model.aiGroup == .body { return "美体" }
         if tool == .ai, model.aiGroup.isHair { return "美发" }
         return tool.title
@@ -497,19 +549,35 @@ struct EditorView: View {
     // MARK: 动作
 
     /// 正常离开编辑器：草稿用不着了。
-    private func leave() {
+    func leave() {
         model.discardDraft()
         onClose()
     }
 
-    private func start(_ tool: Tool) {
+    func start(_ tool: Tool) {
         model.open(tool) {
             // 已经有文字时是回来改它们，不自动弹出新文字的输入框。
             if tool == .text, model.tool == .text, model.overlayItems.isEmpty { addText() }
         }
     }
 
-    private func handle(_ action: MenuAction) {
+    func handle(_ action: MenuAction) {
+        if Platform.isMac, let current = model.tool {
+            // Mac：工具开着时点了别的工具，先把这一个应用掉，再打开新的（不要的话点"取消"）。
+            if case .tool(let t) = action, t == current { return }
+            if case .ai(let g) = action, current == .ai, model.aiGroup == g { return }
+            guard !model.isBusy else { return }
+            if model.aiRunning {
+                show("AI 还在生成")
+                return
+            }
+            model.commitTool { perform(action) }
+            return
+        }
+        perform(action)
+    }
+
+    private func perform(_ action: MenuAction) {
         switch action {
         case .tool(let tool):
             start(tool)
@@ -536,11 +604,11 @@ struct EditorView: View {
         }
     }
 
-    private func addText() {
+    func addText() {
         editingTextID = model.addOverlay(text: "", sticker: false)
     }
 
-    private func finishTextEditing(id: UUID, text: String) {
+    func finishTextEditing(id: UUID, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             model.removeOverlay(id)
@@ -550,10 +618,21 @@ struct EditorView: View {
         editingTextID = nil
     }
 
-    private func save(_ options: SaveOptions) {
+    func save(_ options: SaveOptions) {
         saving = true
         let revision = model.revision
         Task {
+            if Platform.isMac {
+                // Mac：渲染好后弹出存储面板，存成文件。
+                let data = await model.renderData(options)
+                saving = false
+                guard let data else { show("导出失败"); return }
+                exportDoc = ImageFileDocument(data: data, type: UTType(options.format.typeIdentifier) ?? .jpeg)
+                exportRevision = revision
+                exportOptions = options
+                exporting = true
+                return
+            }
             let ok = await model.export(options)
             saving = false
             if ok { savedRevision = revision }
@@ -561,7 +640,7 @@ struct EditorView: View {
         }
     }
 
-    private func show(_ message: String) {
+    func show(_ message: String) {
         toastID += 1
         let id = toastID
         withAnimation(.easeOut(duration: 0.15)) { toast = message }
@@ -633,7 +712,7 @@ struct TextInputOverlay: View {
     var placeholder = "输入文字"
     var onDone: (String) -> Void
 
-    @State private var text = ""
+    @State var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {

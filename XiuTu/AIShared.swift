@@ -77,8 +77,8 @@ struct ChipRow<Item: Identifiable>: View {
     let onTap: (Item) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        HScroll {
+            HRow(spacing: 8) {
                 ForEach(items) { item in
                     Chip(title: title(item), selected: isSelected(item)) { onTap(item) }
                 }

@@ -26,8 +26,8 @@ struct FrameColorRow: View {
     ]
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        HScroll {
+            HRow(spacing: 8) {
                 FrameColorWell(color: selected, pick: pick)
                 ForEach(Self.common, id: \.self) { item in
                     Button { pick(item) } label: {
@@ -95,8 +95,8 @@ struct FramePanel: View {
     var body: some View {
         let params = model.frameState.frame
         VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
+            HScroll {
+                HRow(alignment: .top, spacing: 10) {
                     ForEach(FramePreset.all) { preset in
                         ImageTile(title: preset.title, image: model.frameState.thumbs[preset.id],
                                   selected: model.frameState.presetID == preset.id, symbol: "photo.artframe") {
@@ -134,8 +134,8 @@ struct FramePanel: View {
 
     private func options(_ params: FrameParams) -> some View {
         let now = current(params)
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        return HScroll {
+            HRow(spacing: 8) {
                 Chip(title: params.style.hasBacking ? "纸色" : "颜色", selected: now == .color) { tab = .color }
                 if params.style.hasBacking {
                     Chip(title: "底色", selected: now == .backing) { tab = .backing }
@@ -242,8 +242,8 @@ struct BackdropPanel: View {
         let params = model.frameState.backdrop
         let now = current(params)
         VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(BackdropRatio.allCases) { ratio in
                         Chip(title: ratio.title, selected: params.ratio == ratio) {
                             model.updateBackdrop { $0.ratio = ratio }
@@ -254,8 +254,8 @@ struct BackdropPanel: View {
             }
             .padding(.horizontal, -16)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(BackdropFill.allCases) { fill in
                         Chip(title: fill.title, symbol: fill.symbol, selected: params.fill == fill) {
                             model.updateBackdropFill { $0.fill = fill }
@@ -268,8 +268,8 @@ struct BackdropPanel: View {
 
             fillRow(params)
             slider(params, key: now)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
+            HScroll {
+                HRow(spacing: 4) {
                     ForEach(keys(params)) { item in
                         IconTile(symbol: item.symbol, title: item.title, selected: item == now,
                                  modified: changed(item, params)) { key = item }
@@ -335,8 +335,8 @@ struct BackdropPanel: View {
             FrameColorWell(color: params.colorA) { picked in model.updateBackdropFill { $0.colorA = picked } }
             FrameColorWell(color: params.colorB) { picked in model.updateBackdropFill { $0.colorB = picked } }
             Rectangle().fill(Theme.chip).frame(width: 1, height: 20)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(pairs.indices, id: \.self) { index in
                         let pair = pairs[index]
                         let on = params.colorA == pair.0 && params.colorB == pair.1

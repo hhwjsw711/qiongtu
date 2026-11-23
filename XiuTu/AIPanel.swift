@@ -119,8 +119,8 @@ struct AIPanel: View {
         let pictures = master || model.aiGroup == .hairStyle
         return VStack(spacing: 10) {
             if model.aiGroup == .creative {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HScroll {
+                    HRow(spacing: 8) {
                         ForEach(CreativeKind.allCases) { kind in
                             Chip(title: kind.title, symbol: kind.symbol, selected: creativeKind == kind) { creativeKind = kind }
                         }
@@ -149,8 +149,8 @@ struct AIPanel: View {
                     Spacer(minLength: 0)
                 }
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: pictures ? 10 : 4) {
+            HScroll {
+                HRow(alignment: .top, spacing: pictures ? 10 : 4) {
                     ForEach(model.aiGroup == .creative ? creativeKind.presets : model.aiGroup.presets) { preset in
                         if model.aiGroup == .creative, model.masterThumbs[preset.title] == nil {
                             CreativeArtTile(title: preset.title, symbol: preset.symbol, kind: creativeKind) { start(preset) }

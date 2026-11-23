@@ -421,8 +421,8 @@ private struct LocalSection: View {
         VStack(spacing: 6) {
             if let point = model.selectedLocal {
                 HStack(spacing: 8) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                    HScroll {
+                        HRow(spacing: 8) {
                             ForEach(Array(model.adjust.locals.enumerated()), id: \.element.id) { index, item in
                                 Chip(title: item.isNeutral ? "点 \(index + 1)" : "点 \(index + 1) •",
                                      selected: item.id == point.id) {

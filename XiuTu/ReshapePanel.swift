@@ -133,8 +133,8 @@ struct ReshapePanel: View {
             }
             Spacer(minLength: 0)
             if state.usable.filter({ $0 }).count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                HScroll {
+                    HRow(spacing: 6) {
                         ForEach(state.faces.indices, id: \.self) { index in
                             if state.usable.indices.contains(index), state.usable[index] {
                                 Chip(title: state.faces[index].isIdentity ? "脸\(index + 1)" : "脸\(index + 1) ✓",
@@ -225,8 +225,8 @@ struct ReshapePanel: View {
 
     private var tiles: some View {
         let state = model.reshapeState
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+        return HScroll {
+            HRow(spacing: 6) {
                 ForEach(ReshapeAIItem.items(in: state.category)) { item in
                     IconTile(symbol: item.symbol, title: item.title, badge: "AI") { model.runReshapeAI(item) }
                 }
@@ -254,8 +254,8 @@ struct ReshapeTitle: View {
     var body: some View {
         let selected = model.reshapeState.category
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 22) {
+            HScroll {
+                HRow(spacing: 22) {
                     ForEach(ReshapeCategory.allCases) { category in
                         let on = category == selected
                         Button {

@@ -166,7 +166,7 @@ private struct LayerChrome: View {
 struct LayerPanel: View {
     @Bindable var model: EditorModel
 
-    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickingLayer = false
     @State private var editRequest: LayerEditRequest?
     /// 滑块当前调的是不是羽化（否则是不透明度）。
     @State private var adjustingFeather = false
@@ -203,11 +203,10 @@ struct LayerPanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 4)
-        .onChange(of: pickerItem) { _, item in
-            guard let item else { return }
-            pickerItem = nil
+        .imageSource(isPresented: $pickingLayer) { items in
+            guard let item = items.first else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
+                if let data = await item() {
                     model.addLayer(data: data)
                 } else {
                     model.layerState.note = "这张图片读不出来。"
@@ -222,9 +221,9 @@ struct LayerPanel: View {
     // MARK: 图层列表
 
     private var strip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 10) {
-                PhotosPicker(selection: $pickerItem, matching: .images) {
+        HScroll {
+            HRow(alignment: .top, spacing: 10) {
+                Button { pickingLayer = true } label: {
                     VStack(spacing: 6) {
                         Group {
                             if model.layerState.busy {
@@ -241,6 +240,7 @@ struct LayerPanel: View {
                             .foregroundStyle(.white)
                     }
                 }
+                .buttonStyle(.plain)
                 .disabled(model.layerState.busy)
                 if !model.layerState.layers.isEmpty {
                     Button { model.fuseLayers() } label: {
@@ -374,8 +374,8 @@ struct LayerPanel: View {
         let id = layer.id
         let busy = model.layerState.busy
         let index = model.layerState.layers.firstIndex { $0.id == id } ?? 0
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
+        return HScroll {
+            HRow(spacing: 2) {
                 IconTile(symbol: "slider.horizontal.3", title: "编辑", modified: !layer.ops.isEmpty) {
                     editRequest = model.layerEditRequest(for: id)
                 }

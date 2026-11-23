@@ -56,8 +56,8 @@ struct TextPanel: View {
                         .background(Theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
+                HScroll {
+                    HRow(spacing: 18) {
                         ForEach(Tab.allCases) { item in tabButton(item) }
                     }
                     .padding(.trailing, 8)
@@ -170,8 +170,8 @@ struct TextPanel: View {
                         }
                     }
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HScroll {
+                    HRow(spacing: 8) {
                         ForEach(OverlayShape.allCases) { shape in shapeTile(shape, item: item) }
                     }
                     .padding(.vertical, 1)
@@ -236,8 +236,8 @@ struct TextPanel: View {
     // MARK: 花字
 
     private func presets(_ item: OverlayItem) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 10) {
+        HScroll {
+            HRow(alignment: .top, spacing: 10) {
                 ForEach(OverlayPreset.all) { preset in
                     Button {
                         change { $0 = preset.applied(to: $0) }
@@ -326,8 +326,8 @@ struct TextPanel: View {
                 }
                 Spacer(minLength: 0)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     if fontCategory == .mine {
                         Chip(title: "导入字体", symbol: "square.and.arrow.down", selected: false) { importing = true }
                     }
@@ -402,8 +402,8 @@ struct OverlayColorRow: View {
     var onPick: (OverlayColor?) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+        HScroll {
+            HRow(spacing: 10) {
                 if allowsNone {
                     Button { onPick(nil) } label: {
                         Image(systemName: "nosign")

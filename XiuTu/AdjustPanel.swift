@@ -11,6 +11,8 @@ struct AdjustPanel: View {
         Group {
             if let sub = model.adjust.ui.sub {
                 AdjustSubPanel(model: model, sub: sub)
+            } else if Platform.isMac {
+                macMain
             } else {
                 main
             }
@@ -40,8 +42,8 @@ struct AdjustPanel: View {
                         .frame(width: 36, height: 36)
                 }
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(items) { item in
                         tile(item, selected: key)
                     }
@@ -51,6 +53,56 @@ struct AdjustPanel: View {
             .padding(.horizontal, -16)
             // 换组时回到最左边。
             .id(model.adjustGroup)
+        }
+    }
+
+    /// Mac：这一组的滑条全部列出来；局部调色、HSL 这类子面板和 AI 项排在上面。
+    private var macMain: some View {
+        let items = model.adjustGroup.items
+        let extras = items.filter { if case .key = $0 { return false } else { return true } }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if !extras.isEmpty {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 8) {
+                        ForEach(extras) { item in macTile(item) }
+                    }
+                    Rectangle().fill(MacTheme.line).frame(height: 1)
+                }
+                ForEach(items) { item in
+                    if case .key(let key) = item {
+                        MacSliderRow(title: key.title,
+                                     value: "\(Int((model.adjust[key] * 100).rounded()))",
+                                     changed: model.adjust[key] != 0,
+                                     binding: Binding(get: { Double(model.adjust[key]) },
+                                                      set: {
+                                                          model.adjustKey = key
+                                                          model.setAdjust(key, Float($0))
+                                                      }),
+                                     range: key.bipolar ? -1...1 : 0...1) {
+                            model.setAdjust(key, 0)
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, 12)
+            .padding(.trailing, 10)
+        }
+        .id(model.adjustGroup)
+    }
+
+    @ViewBuilder
+    private func macTile(_ item: AdjustItem) -> some View {
+        switch item {
+        case .key:
+            EmptyView()
+        case .sub(let sub):
+            IconTile(symbol: sub.symbol, title: sub.title, modified: model.adjust.isChanged(sub)) {
+                model.setAdjustSub(sub)
+            }
+        case .ai(let ai):
+            IconTile(symbol: ai.symbol, title: ai.title, badge: "AI") {
+                model.startAIPreset(ai.preset, group: .fix)
+            }
         }
     }
 

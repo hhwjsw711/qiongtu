@@ -27,8 +27,8 @@ struct InstantFilmRow: View {
         let params = model.instantState.params
         let on = !params.isIdentity
         VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
+            HScroll {
+                HRow(alignment: .top, spacing: 10) {
                     ImageTile(title: "无", image: model.lookThumbOriginal, selected: !on) {
                         model.selectInstant(nil)
                     }
@@ -43,8 +43,8 @@ struct InstantFilmRow: View {
                 .padding(.vertical, 2)
             }
             Group {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HScroll {
+                    HRow(spacing: 8) {
                         ForEach(Tab.allCases) { item in
                             Chip(title: item.title, selected: tab == item) { tab = item }
                         }
@@ -106,8 +106,8 @@ struct InstantFilmRow: View {
     private func control(_ params: InstantParams) -> some View {
         switch tab {
         case .stock:
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(InstantStock.allCases) { stock in
                         Chip(title: stock.title, selected: params.stock == stock) {
                             model.updateInstant { $0.stock = stock }
@@ -120,8 +120,8 @@ struct InstantFilmRow: View {
                 model.updateInstant { $0.intensity = value }
             }
         case .paper:
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     FrameColorWell(color: params.paper) { color in
                         model.updateInstant { $0.paper = color }
                     }

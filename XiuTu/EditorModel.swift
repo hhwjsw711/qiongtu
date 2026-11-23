@@ -890,6 +890,22 @@ final class EditorModel {
         Task { await rebuildBase() }
     }
 
+    /// 历史记录面板：从打开时到现在的每一个状态（能撤销的 + 现在的 + 能重做的）。
+    var historyStates: [[EditOp]] { undoStates + [ops] + redoStates.reversed() }
+    /// 现在停在第几个状态。
+    var historyIndex: Int { undoStates.count }
+
+    /// 一下子跳到历史记录里的某个状态（相当于连续撤销 / 重做）。
+    func jumpHistory(to index: Int) {
+        let all = historyStates
+        guard tool == nil, all.indices.contains(index), index != historyIndex else { return }
+        undoStates = Array(all[..<index])
+        ops = all[index]
+        redoStates = Array(all[(index + 1)...].reversed())
+        revision += 1
+        Task { await rebuildBase() }
+    }
+
     func redo() {
         guard canRedo, let next = redoStates.popLast() else { return }
         undoStates.append(ops)
@@ -1718,8 +1734,9 @@ final class EditorModel {
         }.value
     }
 
-    func export(_ options: SaveOptions = .saved) async -> Bool {
-        guard let source else { return false }
+    /// 按保存选项渲染出最终的文件数据。
+    func renderData(_ options: SaveOptions = .saved) async -> Data? {
+        guard let source else { return nil }
         let ops = self.ops
         var space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         if let s = source.colorSpace, s.model == .rgb { space = s }
@@ -1739,17 +1756,25 @@ final class EditorModel {
                 return context.pngRepresentation(of: out, format: .RGBA8, colorSpace: space)
             }
         }.value
-        guard let data else { return false }
+        return data
+    }
+
+    /// 存进历史图库（打开了的话）。
+    func addToHistory(_ data: Data, options: SaveOptions) async {
+        guard HistoryStore.shared.enabled, let source else { return }
+        await HistoryStore.shared.add(data: data, ext: options.format == .jpeg ? "jpg" : options.format.rawValue,
+                                      source: "修图", recipe: EditRecipe(ops: ops, input: proxy ?? source))
+    }
+
+    func export(_ options: SaveOptions = .saved) async -> Bool {
+        guard let data = await renderData(options) else { return false }
         do {
             try await PHPhotoLibrary.shared().performChanges {
                 let creation = PHAssetResourceCreationOptions()
                 creation.uniformTypeIdentifier = options.format.typeIdentifier
                 PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: creation)
             }
-            if HistoryStore.shared.enabled {
-                await HistoryStore.shared.add(data: data, ext: options.format == .jpeg ? "jpg" : options.format.rawValue,
-                                              source: "修图", recipe: EditRecipe(ops: ops, input: proxy ?? source))
-            }
+            await addToHistory(data, options: options)
             return true
         } catch {
             return false

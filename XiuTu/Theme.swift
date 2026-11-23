@@ -225,7 +225,30 @@ struct SegmentBar<Item: Identifiable & Equatable>: View {
     var select: (Item) -> Void
 
     var body: some View {
-        if scrolls {
+        if scrolls, Platform.isMac {
+            // Mac：不左右滑，放不下就换行，每个标签单独一个胶囊。
+            FlowLayout(spacing: 6) {
+                ForEach(items) { item in
+                    let on = item == selected
+                    Button { select(item) } label: {
+                        HStack(spacing: 4) {
+                            if let symbol {
+                                Image(systemName: symbol(item)).font(.system(size: 12, weight: .semibold))
+                            }
+                            Text(title(item))
+                                .font(.system(size: 13, weight: on ? .semibold : .regular))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(on ? Color.black : Color.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(on ? Color.white : Theme.chip, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if scrolls {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     row.padding(3)

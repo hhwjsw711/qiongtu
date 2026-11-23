@@ -121,8 +121,8 @@ struct BeautyPanel: View {
     }
 
     private var facePicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        HScroll {
+            HRow(spacing: 8) {
                 Text("修哪张脸")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
@@ -190,8 +190,8 @@ struct BeautyPanel: View {
                         .accessibilityLabel("重新生成这个风格")
                     }
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HScroll {
+                    HRow(spacing: 8) {
                         GenderToggle()
                         Chip(title: "原图", selected: !model.aiHasResult) { model.discardFaceAI() }
                         if FavoriteFaceStore.shared.current != nil {
@@ -226,8 +226,8 @@ struct BeautyPanel: View {
     private var manualSection: some View {
         let key = model.beautyKey
         return VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     Chip(title: "原图", selected: model.beauty.isIdentity) { model.applyBeautyPreset(nil) }
                     ForEach(BeautyPreset.all) { preset in
                         Chip(title: preset.title, selected: model.beautyPreset == preset.id) {

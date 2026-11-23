@@ -14,7 +14,7 @@ struct StickerPanel: View {
     }
 
     @State private var category: Category = .shapes
-    @State private var picked: PhotosPickerItem?
+    @State private var picking = false
     @State private var busy = false
     @State private var problem: String?
     @State private var showAI = false
@@ -73,8 +73,8 @@ struct StickerPanel: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     Chip(title: "我的", selected: category == .mine) { category = .mine }
                     Chip(title: "图形", selected: category == .shapes) { category = .shapes }
                     Chip(title: "标签", selected: category == .labels) { category = .labels }
@@ -86,22 +86,28 @@ struct StickerPanel: View {
             .padding(.horizontal, -16)
             .contentMargins(.horizontal, 16, for: .scrollContent)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHGrid(rows: rows, spacing: 6) { grid }
+            if Platform.isMac {
+                // Mac：面板高，竖着排、往下滚。
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 6)], spacing: 6) { grid }
+                }
+                .frame(height: 340)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHGrid(rows: rows, spacing: 6) { grid }
+                }
+                .frame(height: 98)
+                .padding(.horizontal, -16)
+                .contentMargins(.horizontal, 16, for: .scrollContent)
             }
-            .frame(height: 98)
-            .padding(.horizontal, -16)
-            .contentMargins(.horizontal, 16, for: .scrollContent)
 
             footer.frame(height: 34)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 6)
-        .onChange(of: picked) { _, item in
-            guard let item else { return }
-            picked = nil
-            importPhoto(item)
+        .imageSource(isPresented: $picking) { items in
+            if let item = items.first { importPhoto(item) }
         }
         .sheet(isPresented: $showAI) {
             AIStickerSheet { image in
@@ -116,8 +122,8 @@ struct StickerPanel: View {
     private var grid: some View {
         switch category {
         case .mine:
-            PhotosPicker(selection: $picked, matching: .images) {
-                actionTile("photo.badge.plus", "相册")
+            Button { picking = true } label: {
+                actionTile("photo.badge.plus", Platform.isMac ? "打开图片" : "相册")
             }
             .buttonStyle(.plain)
             Button { showAI = true } label: { actionTile("sparkles", "AI 生成") }
@@ -243,14 +249,14 @@ struct StickerPanel: View {
         .background(Color(white: 0.3), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func importPhoto(_ item: PhotosPickerItem) {
+    private func importPhoto(_ item: @escaping ImageLoader) {
         guard !busy else { return }
         busy = true
         problem = nil
         let cut = autoCut
         Task {
             defer { busy = false }
-            guard let data = try? await item.loadTransferable(type: Data.self),
+            guard let data = await item(),
                   let made = await StickerImport.make(from: data, autoCut: cut) else {
                 problem = "这张图读不出来"
                 return
@@ -301,8 +307,8 @@ struct AIStickerSheet: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
                     .background(Theme.chip, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HScroll {
+                    HRow(spacing: 8) {
                         ForEach(StickerAI.styles.indices, id: \.self) { index in
                             Chip(title: StickerAI.styles[index].title, selected: style == index) { style = index }
                         }

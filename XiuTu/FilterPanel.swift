@@ -26,8 +26,8 @@ struct FilterPanel: View {
             .disabled(model.lookID == nil)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(LookCategory.allCases) { category in
                         Chip(title: category.title, selected: model.lookCategory == category) {
                             model.lookCategory = category
@@ -36,8 +36,8 @@ struct FilterPanel: View {
                 }
             }
             if model.lookCategory == .master {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 10) {
+                HScroll {
+                    HRow(alignment: .top, spacing: 10) {
                         ForEach(AIPresetGroup.master.presets) { preset in
                             ImageTile(title: preset.title, image: model.masterThumbs[preset.title],
                                       symbol: "camera.aperture", badge: "AI") { model.startMaster(preset) }
@@ -49,8 +49,8 @@ struct FilterPanel: View {
             } else if model.lookCategory == .instant {
                 InstantFilmRow(model: model)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                HScroll {
+                    HRow(spacing: 10) {
                         thumb(name: "原图", image: model.lookThumbOriginal, selected: model.lookID == nil) {
                             model.selectLook(nil)
                         }

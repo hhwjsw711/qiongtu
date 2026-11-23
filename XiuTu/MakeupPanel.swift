@@ -41,8 +41,8 @@ struct MakeupPanel: View {
         if !tabs.isEmpty || (state.category.isLocal && state.faces.count > 1) || state.category == .look {
             HStack(spacing: 10) {
                 if state.category == .look { GenderToggle() }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
+                HScroll {
+                    HRow(spacing: 18) {
                         ForEach(tabs.indices, id: \.self) { index in
                             let on = state.tab == index
                             Button { model.setMakeupTab(index) } label: {
@@ -104,8 +104,8 @@ struct MakeupPanel: View {
     private func options(_ state: MakeupState) -> some View {
         let built = model.makeupOptions()
         let listKey = "\(state.session)|\(state.faceIndex)|\(state.category.rawValue)|\(state.tab)"
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 8) {
+        return HScroll {
+            HRow(alignment: .top, spacing: 8) {
                 if let custom = model.makeupCustomColor {
                     CustomColorTile(color: custom) { model.setMakeupCustomColor($0) }
                 }
@@ -201,8 +201,8 @@ struct MakeupTitle: View {
     var body: some View {
         let selected = model.makeupState.category
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 20) {
+            HScroll {
+                HRow(spacing: 20) {
                     ForEach(MakeupCategory.allCases) { category in
                         let on = category == selected
                         Button {

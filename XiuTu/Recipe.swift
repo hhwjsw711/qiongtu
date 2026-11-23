@@ -58,7 +58,7 @@ struct EditRecipe: Codable {
 
     private static func percent(_ v: CGFloat) -> String { "\(Int((v * 100).rounded()))" }
 
-    private static func step(_ op: EditOp, inputSize: () -> CGSize) -> RecipeStep {
+    static func step(_ op: EditOp, inputSize: () -> CGSize) -> RecipeStep {
         switch op {
         case .adjust(let p):
             var parts: [String] = []

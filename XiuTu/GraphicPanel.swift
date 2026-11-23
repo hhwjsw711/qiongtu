@@ -38,8 +38,8 @@ struct GraphicPanel: View {
                         .background(Theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
+                HScroll {
+                    HRow(spacing: 18) {
                         ForEach(Tab.allCases) { item in tabButton(item) }
                     }
                     .padding(.trailing, 8)
@@ -94,8 +94,8 @@ struct GraphicPanel: View {
 
     /// 选中了形状就换它的种类，没选中就加一个新的。
     private var kinds: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+        HScroll {
+            HRow(spacing: 10) {
                 ForEach(GraphicKind.allCases) { kind in
                     let on = selected?.graphic?.kind == kind
                     Button {

@@ -2,12 +2,21 @@ import SwiftUI
 
 @main
 struct XiuTuApp: App {
+    @UIApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+            Group {
+                if Platform.isMac {
+                    MacRootView()
+                } else {
+                    RootView()
+                }
+            }
+            .preferredColorScheme(.dark)
+            .tint(Theme.accent)
         }
+        .commands { MacCommands() }
     }
 }
 

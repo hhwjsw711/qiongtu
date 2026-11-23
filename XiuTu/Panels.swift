@@ -33,8 +33,8 @@ struct CropPanel: View {
                 }
                 Spacer()
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(CropAspect.allCases) { aspect in
                         Chip(title: aspect.title, selected: model.cropAspect == aspect) {
                             model.setCropAspect(aspect)

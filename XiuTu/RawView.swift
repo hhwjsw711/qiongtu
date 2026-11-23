@@ -191,6 +191,9 @@ struct RawView: View {
 
     @State private var model: RawModel
     @State private var toast: String?
+    /// Mac：导出到文件。
+    @State private var exportDoc: ImageFileDocument?
+    @State private var exporting = false
 
     init(name: String, data: Data, onClose: @escaping () -> Void, onEdit: @escaping (URL) -> Void) {
         self.name = name
@@ -203,13 +206,17 @@ struct RawView: View {
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                topBar.frame(height: 52)
-                canvas.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
-                panel
-                BottomTabBar(tabs: RawGroup.allCases, title: { $0.title }, selection: Binding(
-                    get: { model.group },
-                    set: { model.select(group: $0) }))
+            if Platform.isMac {
+                macLayout
+            } else {
+                VStack(spacing: 0) {
+                    topBar.frame(height: 52)
+                    canvas.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+                    panel
+                    BottomTabBar(tabs: RawGroup.allCases, title: { $0.title }, selection: Binding(
+                        get: { model.group },
+                        set: { model.select(group: $0) }))
+                }
             }
             if model.busy {
                 VStack(spacing: 12) {
@@ -238,13 +245,21 @@ struct RawView: View {
                         .padding(.horizontal, 18)
                         .padding(.vertical, 11)
                         .background(Color(white: 0.2).opacity(0.95), in: Capsule())
-                        .padding(.bottom, 250)
+                        .padding(.bottom, Platform.isMac ? 48 : 250)
                 }
                 .allowsHitTesting(false)
             }
         }
         .preferredColorScheme(.dark)
         .task { model.load(data: data) }
+        .fileExporter(isPresented: $exporting, document: exportDoc, contentType: exportDoc?.type ?? .jpeg,
+                      defaultFilename: (name as NSString).deletingPathExtension + "-RAW") { result in
+            guard case .success = result else { return }
+            if HistoryStore.shared.enabled, let doc = exportDoc {
+                Task { await HistoryStore.shared.add(data: doc.data, ext: doc.type == .heic ? "heic" : "jpg", source: "RAW") }
+            }
+            show("已导出")
+        }
     }
 
     private var topBar: some View {
@@ -333,6 +348,11 @@ struct RawView: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
+                if !Platform.isMac { phoneCompare }
+            }
+    }
+
+    private var phoneCompare: some View {
                 Image(systemName: "square.split.2x1")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -344,7 +364,6 @@ struct RawView: View {
                             .onChanged { _ in if !model.comparing { model.comparing = true } }
                             .onEnded { _ in model.comparing = false }
                     )
-            }
     }
 
     @ViewBuilder
@@ -384,8 +403,8 @@ struct RawView: View {
                             .frame(width: 36, height: 36)
                     }
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HScroll {
+                    HRow(spacing: 8) {
                         ForEach(model.keys(in: model.group)) { item in
                             IconTile(symbol: item.symbol, title: item.title, selected: item == key,
                                      modified: model.isChanged(item)) {
@@ -409,8 +428,8 @@ struct RawView: View {
     private var thirdRow: some View {
         switch model.group {
         case .color:
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     Chip(title: "吸管", selected: model.pickingWhiteBalance) { model.pickingWhiteBalance.toggle() }
                     Chip(title: "原照设置", selected: !model.isChanged(.temperature) && !model.isChanged(.tint)) {
                         model.applyWhiteBalance(nil)
@@ -425,8 +444,8 @@ struct RawView: View {
                 }
             }
         case .mixer:
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(MixColor.allCases) { color in
                         Button { model.select(mixColor: color) } label: {
                             HStack(spacing: 6) {
@@ -461,6 +480,150 @@ struct RawView: View {
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             toast = nil
+        }
+    }
+}
+
+// MARK: - Mac 布局
+
+extension RawView {
+    /// 顶栏 + （画布 | 右边的参数面板）。参数面板把这一组的滑条全部列出来，不用一个一个点。
+    private var macLayout: some View {
+        VStack(spacing: 0) {
+            macTopBar
+            Rectangle().fill(MacTheme.line).frame(height: 1)
+            HStack(spacing: 0) {
+                canvas
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .background(MacTheme.canvas)
+                Rectangle().fill(MacTheme.line).frame(width: 1)
+                macInspector
+                    .frame(width: 340)
+                    .background(MacTheme.panel)
+            }
+        }
+        .background(MacTheme.canvas)
+    }
+
+    private var macTopBar: some View {
+        HStack(spacing: 6) {
+            Color.clear.frame(width: 70, height: 1)
+            MacIconButton(symbol: "chevron.left", help: "返回开始页", action: onClose)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                Text(model.sizeText).font(.system(size: 10.5)).foregroundStyle(Theme.dim)
+            }
+            .padding(.leading, 4)
+            Spacer()
+            MacIconButton(symbol: "arrow.counterclockwise", help: "全部复位") { model.resetAll() }
+                .disabled(!model.isModified)
+            MacHoldButton(symbol: "square.split.2x1", help: "按住看原图") { model.comparing = $0 }
+            Button {
+                Task {
+                    guard let url = await model.develop(), let data = try? Data(contentsOf: url) else {
+                        show("冲洗失败")
+                        return
+                    }
+                    exportDoc = ImageFileDocument(data: data, type: url.pathExtension.lowercased() == "heic" ? .heic : .jpeg)
+                    exporting = true
+                }
+            } label: {
+                Text("导出")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 28)
+                    .background(MacTheme.line, in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(.plain)
+            Button {
+                Task {
+                    if let url = await model.develop() { onEdit(url) } else { show("冲洗失败") }
+                }
+            } label: {
+                Text("进入编辑").macProminent()
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(.white)
+        .padding(.trailing, 12)
+        .frame(height: 44)
+        .background(MacTheme.chrome)
+        .disabled(model.busy || model.preview == nil)
+    }
+
+    private var macInspector: some View {
+        VStack(spacing: 0) {
+            if let histogram = model.histogram {
+                Image(uiImage: histogram)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(height: 90)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(12)
+            }
+            // 分组：两行四个。
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
+                ForEach(RawGroup.allCases) { group in
+                    let on = model.group == group
+                    Button { model.select(group: group) } label: {
+                        Text(group.title)
+                            .font(.system(size: 12, weight: on ? .bold : .regular))
+                            .foregroundStyle(on ? Color.black : Color.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 26)
+                            .background(on ? Theme.accent : MacTheme.header, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+            Rectangle().fill(MacTheme.line).frame(height: 1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if model.group == .optics {
+                        panel
+                    } else {
+                        thirdRow
+                        ForEach(model.keys(in: model.group)) { key in
+                            macSlider(key)
+                        }
+                    }
+                }
+                .padding(14)
+            }
+        }
+    }
+
+    private func macSlider(_ key: RawKey) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(key.title)
+                    .font(.system(size: 12))
+                Spacer()
+                Text(key.format(model.value(key)))
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(model.isChanged(key) ? Theme.accent : Theme.dim)
+                Button { model.reset(key) } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(width: 20, height: 18)
+                }
+                .buttonStyle(.plain)
+                .opacity(model.isChanged(key) ? 1 : 0.25)
+                .disabled(!model.isChanged(key))
+                .help("复位")
+            }
+            Slider(value: Binding(
+                get: { Double(model.value(key)) },
+                set: {
+                    model.key = key
+                    model.set(key, Float($0))
+                }
+            ), in: Double(key.range.lowerBound)...Double(key.range.upperBound))
+            .controlSize(.small)
         }
     }
 }

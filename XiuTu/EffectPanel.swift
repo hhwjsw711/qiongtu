@@ -27,8 +27,8 @@ struct EffectPanel: View {
 
             variantRow(kind)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(EffectCategory.allCases) { category in
                         Chip(title: category.title, selected: state.category == category,
                              badge: category == .sky ? "AI" : nil) {
@@ -39,8 +39,8 @@ struct EffectPanel: View {
                 .padding(.top, 4)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
+            HScroll {
+                HRow(alignment: .top, spacing: 10) {
                     if state.category == .sky {
                         ForEach(EffectSky.all) { sky in
                             ImageTile(title: sky.title, image: Self.skyThumb(sky), badge: "AI") {
@@ -76,8 +76,8 @@ struct EffectPanel: View {
     /// 颜色 / 变体，随机排布的效果多一个"换一换"。没有时留出同样的高度，面板不跳。
     @ViewBuilder
     private func variantRow(_ kind: EffectKind?) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        HScroll {
+            HRow(spacing: 8) {
                 if let kind {
                     ForEach(Array(kind.variants.enumerated()), id: \.offset) { i, v in
                         Chip(title: v.title, selected: state.params.variant == i) { model.setEffectVariant(i) }

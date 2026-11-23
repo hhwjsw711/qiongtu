@@ -216,7 +216,7 @@ extension EditorModel {
     }
 
     /// 相册里选好了：读出来，放进拼图。
-    func collageImport(_ items: [PhotosPickerItem]) {
+    func collageImport(_ items: [ImageLoader]) {
         guard !items.isEmpty else { return }
         let replace = collageState.pickerReplace
         collageState.loading = true
@@ -224,7 +224,7 @@ extension EditorModel {
         Task { [weak self] in
             var loaded: [CollagePicture] = []
             for item in items {
-                guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+                guard let data = await item() else { continue }
                 let picture = await Task.detached(priority: .userInitiated) { CollageImport.picture(from: data) }.value
                 if let picture { loaded.append(picture) }
             }

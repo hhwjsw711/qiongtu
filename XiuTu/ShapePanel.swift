@@ -513,8 +513,8 @@ struct ShapePanel: View {
     /// 一键美体：本机的两套 + 交给 AI 的几套。
     private var presets: some View {
         let state = model.shapeState
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 4) {
+        return HScroll {
+            HRow(alignment: .top, spacing: 4) {
                 FeatureTile(symbol: "photo", title: "原图", selected: state.preset == nil) {
                     model.selectShapePreset(nil)
                 }
@@ -545,8 +545,8 @@ struct ShapePanel: View {
     private var items: some View {
         let state = model.shapeState
         return VStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            HScroll {
+                HRow(spacing: 8) {
                     ForEach(ShapeGroup.allCases) { group in
                         Chip(title: group.title, selected: state.group == group) {
                             model.shapeState.group = group
@@ -560,8 +560,8 @@ struct ShapePanel: View {
                 .padding(.horizontal, 16)
             }
             .padding(.horizontal, -16)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+            HScroll {
+                HRow(spacing: 6) {
                     ForEach(state.group.items) { item in
                         let usable = item.isAI || (state.body.map { item.available(in: $0) } ?? false)
                         IconTile(symbol: item.symbol, title: item.title,

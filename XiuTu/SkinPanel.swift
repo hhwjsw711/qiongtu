@@ -47,8 +47,8 @@ struct SkinPanel: View {
     }
 
     private func facePicker(_ state: SkinState) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        HScroll {
+            HRow(spacing: 8) {
                 ForEach(state.params.faces.indices, id: \.self) { index in
                     Chip(title: state.params.faces[index].isIdentity ? "第 \(index + 1) 张" : "第 \(index + 1) 张 ✓",
                          selected: state.faceIndex == index) { model.selectSkinFace(index) }
@@ -66,8 +66,8 @@ struct SkinPanel: View {
         case .key(let key):
             VStack(spacing: 8) {
                 if key == .white || key == .warmth || key == .rosy {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                    HScroll {
+                        HRow(spacing: 8) {
                             ForEach(SkinTonePreset.all) { preset in
                                 Chip(title: preset.title, selected: matches(preset, state)) { model.applySkinTone(preset) }
                             }
@@ -164,8 +164,8 @@ struct SkinPanel: View {
     // MARK: 项目
 
     private func tiles(_ state: SkinState) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 4) {
+        HScroll {
+            HRow(alignment: .top, spacing: 4) {
                 switch state.tab {
                 case .skin:
                     preset(.skin, state)
@@ -327,8 +327,8 @@ struct SkinTitle: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 20) {
+            HScroll {
+                HRow(spacing: 20) {
                     ForEach(SkinTab.allCases) { tab in
                         let on = model.skinState.tab == tab
                         Button {

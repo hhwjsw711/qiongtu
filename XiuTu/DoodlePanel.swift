@@ -35,8 +35,8 @@ struct DoodleColorRow: View {
                         supportsOpacity: false)
                 .labelsHidden()
                 .frame(width: 30, height: 30)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+            HScroll {
+                HRow(spacing: 10) {
                     ForEach(DoodleColor.palette, id: \.self) { item in
                         Button { color = item } label: {
                             Circle()
@@ -155,8 +155,8 @@ struct DoodlePanel: View {
             } else {
                 DoodleColorRow(color: $model.doodleState.color)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 8) {
+            HScroll {
+                HRow(alignment: .top, spacing: 8) {
                     ForEach(state.category.brushes) { brush in
                         brushTile(brush, selected: !state.erasing && state.brush == brush)
                     }
@@ -226,8 +226,8 @@ struct MarkPanel: View {
     var body: some View {
         let state = model.doodleState
         VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
+            HScroll {
+                HRow(spacing: 2) {
                     ForEach(DoodleBrush.shapes) { shape in
                         IconTile(symbol: shape.symbol, title: shape.title, selected: state.brush == shape) {
                             model.selectDoodleBrush(shape)

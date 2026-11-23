@@ -209,6 +209,35 @@ enum AutoStitchLoader {
         }.value
     }
 
+    /// Mac：用户一次拖进来（或选了）好几张图。一样大的截图按内容算好接缝；大小不一的就按顺序整张接起来。
+    /// 文件先复制到临时目录（拼接页读完会删掉临时文件，不能动用户的原文件）。
+    static func job(files: [URL]) async -> AutoStitchJob? {
+        guard files.count >= 2 else { return nil }
+        return await Task.detached(priority: .userInitiated) { () -> AutoStitchJob? in
+            var loaded: [(data: Data, image: CGImage)] = []
+            for url in files {
+                guard let data = try? Data(contentsOf: url),
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { continue }
+                loaded.append((data, image))
+            }
+            guard loaded.count >= 2 else { return nil }
+            let plan = AutoStitch.plan(loaded.map(\.image))
+                ?? AutoStitch.Plan(order: Array(loaded.indices),
+                                   cropStart: Array(repeating: 0, count: loaded.count),
+                                   cropEnd: Array(repeating: 0, count: loaded.count))
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("autostitch-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var out: [URL] = []
+            for (k, index) in plan.order.enumerated() {
+                let url = dir.appendingPathComponent("\(k)")
+                guard (try? loaded[index].data.write(to: url)) != nil else { return nil }
+                out.append(url)
+            }
+            return AutoStitchJob(files: out, cropStart: plan.cropStart, cropEnd: plan.cropEnd)
+        }.value
+    }
+
     /// 最新的那张截图往前数，大小一样、前后隔得不久的算一组。按时间先后返回。
     private static func recentGroup() -> [PHAsset] {
         let options = PHFetchOptions()
