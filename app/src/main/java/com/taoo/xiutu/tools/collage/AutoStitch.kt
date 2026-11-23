@@ -63,7 +63,11 @@ object AutoStitch {
     }
 
     /** sigs 按时间先后排好，每张一样大；自动判断是往下滚还是往上滚。 */
-    fun plan(sigs: List<Signature>): Plan? {
+    /**
+     * minFooter：底部至少当成固定尾巴的行数。安卓的手势条浮在内容上面，所在的几行每张都不一样，
+     * 认不出是固定的，要按系统导航栏的高度直接去掉，不然每个接缝处都会留一道手势条。
+     */
+    fun plan(sigs: List<Signature>, minFooter: Int = 0): Plan? {
         if (sigs.size < 2) return null
         val w = sigs[0].width
         val h = sigs[0].rows
@@ -78,6 +82,7 @@ object AutoStitch {
             footer = min(footer, bottom)
         }
         if (header + footer > h * 7 / 10) { header = 0; footer = 0 }
+        if (minFooter in (footer + 1)..(h / 5) && header + minFooter <= h * 7 / 10) footer = minFooter
 
         // 方向：第一对正着接和反着接哪个对得更好。
         val forward = overlap(sigs[0], sigs[1], header, footer)

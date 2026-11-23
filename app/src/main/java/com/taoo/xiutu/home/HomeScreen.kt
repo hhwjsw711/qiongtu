@@ -5,6 +5,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,7 +75,8 @@ fun HomeScreen(
         permission.launch(perms)
     }
     Box(Modifier.fillMaxSize().background(Theme.bg).systemBarsPadding()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        // 屏幕矮、字号大的手机上一屏放不下，可以往下滚到底部的小字。
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("穷图", fontSize = 38.sp, fontWeight = FontWeight.Black, color = Color.White, fontFamily = FontFamily.SansSerif)
                 Spacer(Modifier.weight(1f))
@@ -109,7 +112,6 @@ fun HomeScreen(
                 FeatureButton(if (HistoryStore.hasPassword) "lock.fill" else "photo.stack", "历史图库", value = "${HistoryStore.count} 张", action = startHistory)
                 FeatureButton("star.fill", "满意脸型", value = "${FavoriteFaceStore.faces.size} 个", action = startFavorite)
             }
-            Spacer(Modifier.weight(1f))
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Theme.panel).press { showSettings = true }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -123,7 +125,7 @@ fun HomeScreen(
                 Icon(sym("chevron.right"), null, tint = Theme.dim, modifier = Modifier.size(14.dp))
             }
             // 点一下打开作者的 X 主页。
-            Text("作者X:@iam678", fontSize = 13.sp, color = Theme.dim, modifier = Modifier.tap { runCatching { uriHandler.openUri("https://x.com/iam678") } })
+            Text("作者X:@iam678", fontSize = 13.sp, color = Theme.dim, modifier = Modifier.align(Alignment.CenterHorizontally).tap { runCatching { uriHandler.openUri("https://x.com/iam678") } })
         }
         if (stitching) BusyOverlay()
     }

@@ -46,9 +46,20 @@ object AutoStitchLoader {
             img.recycle()
         }
         if (sigs.size < 2) return@withContext Result(null, Failure.NOT_ENOUGH)
-        val plan = AutoStitch.plan(sigs) ?: return@withContext Result(null, Failure.FAILED)
+        val plan = AutoStitch.plan(sigs, navBarHeight(context, sigs[0].width, sigs[0].rows)) ?: return@withContext Result(null, Failure.FAILED)
         val file = runCatching { draw(context, used, plan) }.getOrNull()
         if (file == null) Result(null, Failure.FAILED) else Result(file, null)
+    }
+
+    /** 截图和本机屏幕一样大（竖屏）时，底部系统导航栏 / 手势条的高度；别的设备截的图返回 0。 */
+    private fun navBarHeight(context: Context, width: Int, height: Int): Int {
+        val res = context.resources
+        val dm = res.displayMetrics
+        val wm = context.getSystemService(android.view.WindowManager::class.java) ?: return 0
+        val bounds = wm.maximumWindowMetrics.bounds
+        if (width != minOf(bounds.width(), bounds.height()) || height != maxOf(bounds.width(), bounds.height())) return 0
+        val id = res.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (id > 0) res.getDimensionPixelSize(id) else (24 * dm.density).toInt()
     }
 
     /** 按拼法把每一段画到长图上，存成 PNG。 */
