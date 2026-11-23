@@ -405,7 +405,8 @@ class BeautySession(model: EditorModel) : ToolSession(model, Tool.BEAUTY), ModeS
             return
         }
         endpoint = endpoint.copy(highFidelity = true, quality = if (endpoint.quality == "auto") "high" else endpoint.quality)
-        val ops = model.ops
+        // 文字、贴纸、形状这些装饰不发给 AI，只发照片本身。
+        val ops = model.photoOps
         val key = pendingFaceKey
         val sentFrame = RectF(crop)
         val sentEllipse = ellipse?.let { RectF(it) }

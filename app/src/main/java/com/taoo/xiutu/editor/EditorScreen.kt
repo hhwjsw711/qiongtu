@@ -80,7 +80,7 @@ fun MainTab.entries(): List<MenuEntry> {
         )
         MainTab.HAIR -> AIPresetGroup.hairGroups.map { MenuEntry(it.title, it.symbol, "AI", MenuAction.OpenAI(it)) }
         MainTab.DECO -> listOf(
-            MenuEntry(Tool.STICKER), MenuEntry(Tool.TEXT), MenuEntry(Tool.DOODLE), MenuEntry(Tool.FRAME),
+            MenuEntry(Tool.STICKER), MenuEntry(Tool.TEXT), MenuEntry(Tool.GRAPHIC), MenuEntry(Tool.DOODLE), MenuEntry(Tool.FRAME),
             MenuEntry(Tool.BACKDROP), MenuEntry(Tool.MARK), MenuEntry(Tool.MOSAIC),
         )
         MainTab.AI -> AIPresetGroup.editGroups.map { MenuEntry(it.menuTitle, it.symbol, "AI", MenuAction.OpenAI(it)) }

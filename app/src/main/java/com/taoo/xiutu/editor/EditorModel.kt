@@ -186,7 +186,7 @@ class EditorModel(val context: Context) {
         val proxy = proxy ?: return
         if (!draftEnabled) return
         var all = ops
-        if (tool == Tool.AI) all = all + (runCatching { session?.commitOps() }.getOrNull() ?: emptyList())
+        if (tool == Tool.AI) all = withLifted(runCatching { session?.commitOps() }.getOrNull() ?: emptyList())
         if (all.isEmpty()) return
         val original = draftOriginal
         val token = DraftStore.token
@@ -221,8 +221,7 @@ class EditorModel(val context: Context) {
 
     /** 打开 AI 修图的某一组。 */
     fun beginAI(group: AIPresetGroup, prompt: String = "", preset: AIPreset? = null, run: Boolean = false) {
-        val s = begin(Tool.AI) ?: return
-        (s as? AiToolApi)?.setup(group, prompt, preset, run)
+        beginLifting(Tool.AI) { s -> (s as? AiToolApi)?.setup(group, prompt, preset, run) }
     }
 
     /** 从别的工具里点了要用 AI 的功能：当前工具里已经调好的先保留成一步，再转到 AI 修图并直接开始生成。 */
@@ -267,6 +266,7 @@ class EditorModel(val context: Context) {
             reopened = null
             r.preview?.let { base = it }
         }
+        dropLifted()
         displayImage = base
     }
 
@@ -278,6 +278,7 @@ class EditorModel(val context: Context) {
         val replacement = runCatching { s.replacementOps() }.onFailure { it.printStackTrace() }.getOrNull()
         if (replacement != null) {
             comparing = false
+            clearLifted()
             s.close()
             replaceOps(replacement, next)
             return
@@ -298,7 +299,9 @@ class EditorModel(val context: Context) {
             cancelTool(); next?.invoke(); return
         }
         recordUndo()
-        ops = ops + newOps
+        // 拿下过装饰：新的一步放在照片这一层，装饰仍然浮在最上面
+        ops = withLifted(newOps)
+        clearLifted()
         scope.launch {
             rebuildBase()
             s.close()
@@ -346,6 +349,69 @@ class EditorModel(val context: Context) {
         scope.launch { rebuildBase() }
     }
 
+    // MARK: 浮在照片上的装饰
+
+    /** 进 AI 修图 / 美颜时先拿下来的装饰（文字、贴纸、形状、图层）：AI 只处理照片，确认后再放回最上面。 */
+    private var liftedFloating: List<EditOp> = emptyList()
+    /** 拿下装饰之前的底图：取消时换回来。 */
+    private var liftedBase: Bitmap? = null
+
+    /** 照片本身的步骤：拿下了装饰时不含它们。AI 修图、AI 美颜发出去的就是这些。 */
+    val photoOps: List<EditOp> get() = if (liftedFloating.isEmpty()) ops else EditOp.splitFloating(ops).first
+
+    /** 当前历史加上新的几步；拿下过装饰时新步骤放在照片和装饰之间。 */
+    private fun withLifted(newOps: List<EditOp>): List<EditOp> =
+        if (liftedFloating.isEmpty()) ops + newOps else photoOps + newOps + liftedFloating
+
+    /**
+     * 打开工具。AI 修图 / 美颜：历史末尾的装饰先拿下来，底图换成只有照片的样子再打开，
+     * 确认后装饰放回最上面，不会被 AI 画死在照片里。
+     */
+    private fun beginLifting(t: Tool, ready: ((ToolSession) -> Unit)?) {
+        val snapshot = ops
+        val (photo, floating) = EditOp.splitFloating(snapshot)
+        val proxy = proxy
+        if ((t != Tool.AI && t != Tool.BEAUTY) || floating.isEmpty() || reopened != null || proxy == null) {
+            begin(t)?.let { ready?.invoke(it) }
+            return
+        }
+        if (base == null || isBusy || tool != null) return
+        isBusy = true
+        scope.launch {
+            val img = withContext(Dispatchers.Default) {
+                runCatching { Img.downscale(EditOp.applyAll(photo, proxy), PREVIEW_SIDE) }.getOrNull()
+            }
+            isBusy = false
+            if (tool != null) return@launch
+            if (img != null && ops === snapshot) {
+                liftedFloating = floating
+                liftedBase = base
+                base = img
+                displayImage = img
+            }
+            val s = begin(t)
+            if (s == null) {
+                dropLifted()
+                displayImage = base
+                return@launch
+            }
+            ready?.invoke(s)
+        }
+    }
+
+    /** 不用拿下来的装饰了（确认之后）。 */
+    private fun clearLifted() {
+        liftedFloating = emptyList()
+        liftedBase = null
+    }
+
+    /** 取消：底图换回带装饰的样子。 */
+    private fun dropLifted() {
+        if (liftedFloating.isEmpty()) return
+        liftedBase?.let { base = it }
+        clearLifted()
+    }
+
     // MARK: 重新打开装饰
 
     private class ReopenPlan(val prefix: List<EditOp>, val suffix: List<EditOp>, val op: EditOp?, val merged: List<EditOp>)
@@ -374,7 +440,7 @@ class EditorModel(val context: Context) {
         val plan = reopenPlan(t)
         val proxy = proxy
         if (plan == null || proxy == null) {
-            begin(t)?.let { ready?.invoke(it) }
+            beginLifting(t, ready)
             return
         }
         isBusy = true

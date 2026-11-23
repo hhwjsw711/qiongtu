@@ -48,6 +48,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.taoo.xiutu.editor.EditorModel
 import com.taoo.xiutu.editor.EditorScreen
 import com.taoo.xiutu.editor.LayerEditRequest
+import com.taoo.xiutu.tools.overlay.OverlayItem
+import com.taoo.xiutu.tools.overlay.OverlayOp
+import com.taoo.xiutu.tools.overlay.OverlayRenderer
 import com.taoo.xiutu.ui.CornerBadge
 import com.taoo.xiutu.ui.IconTile
 import com.taoo.xiutu.ui.Theme
@@ -362,12 +365,40 @@ private fun Strip(s: LayerSession, onAdd: () -> Unit) {
                 Text("AI 融合", fontSize = 11.5.sp, color = Color.White)
             }
         }
+        // 文字、贴纸、形状也是浮在照片上的一层：点一下转到对应的工具接着改。
+        for (item in decorations(s).asReversed()) {
+            key(item.id) { DecorationThumb(s, item) }
+        }
         for (layer in s.layers.reversed()) {
             key(layer.id) {
                 Thumb(layer.name, layer.preview, s.selectedId == layer.id, layer.hidden) { s.selectedId = layer.id }
             }
         }
         Thumb("照片", s.background, s.selectedId == null, false) { s.selectedId = null }
+    }
+}
+
+/** 历史里所有的文字、贴纸、形状（先加的在前）。 */
+private fun decorations(s: LayerSession): List<OverlayItem> =
+    s.model.ops.flatMap { (it as? OverlayOp)?.items ?: emptyList() }
+
+private fun decorationTitle(item: OverlayItem): String = when {
+    item.graphic != null -> item.graphic.kind.title
+    item.isImage -> "贴纸"
+    item.isSticker -> item.text
+    else -> item.text.replace("\n", " ").take(5)
+}
+
+@Composable
+private fun DecorationThumb(s: LayerSession, item: OverlayItem) {
+    val density = LocalDensity.current.density
+    val image = remember(item) {
+        // 图片和形状按宽度画，文字按字号画
+        val size = if (item.isImage || item.isGraphic) 50f else 30f
+        runCatching { OverlayRenderer.thumbnail(item, size * density) }.getOrNull()
+    }
+    Thumb(decorationTitle(item), image, false, false) {
+        if (!s.working) s.model.commitTool { s.model.open(item.tool, selecting = item.id) }
     }
 }
 

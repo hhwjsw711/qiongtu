@@ -4,19 +4,24 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.Layout as TextLayout
 import android.text.StaticLayout
 import android.text.TextPaint
 import com.taoo.xiutu.ml.Mask8
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.tan
 
 /**
  * 文字 / 贴纸的实际绘制：Canvas + StaticLayout，可以在后台线程跑。
@@ -58,6 +63,7 @@ object OverlayDrawing {
     fun layout(item: OverlayItem, fs: Float): Layout? {
         if (fs < 1f) return null
         item.image?.let { return imageLayout(item, it.bitmap, fs) }
+        item.graphic?.let { return graphicLayout(item, it, fs) }
         if (item.text.isEmpty()) return null
 
         var fakeBold = false
@@ -262,7 +268,11 @@ object OverlayDrawing {
         val item = layout.item
         val opacity = item.opacity.coerceIn(0f, 1f)
         if (opacity < 1f) canvas.saveLayerAlpha(null, (opacity * 255).roundToInt())
-        if (item.image != null) drawImage(item.image.bitmap, layout, canvas) else drawText(layout, canvas)
+        when {
+            item.image != null -> drawImage(item.image.bitmap, layout, canvas)
+            item.graphic != null -> drawGraphic(layout, canvas)
+            else -> drawText(layout, canvas)
+        }
         if (opacity < 1f) canvas.restore()
         return out
     }
@@ -369,5 +379,184 @@ object OverlayDrawing {
         p.color = color
         canvas.drawBitmap(a, null, rect, p)
         a.recycle()
+    }
+
+    // MARK: 形状
+
+    /** 形状的描边粗细（像素）：按短边算。 */
+    private fun graphicLine(item: OverlayItem, short: Float) =
+        if (item.strokeOn) short * 0.12f * item.strokeWidth.coerceIn(0.05f, 1f) else 0f
+
+    private fun graphicLayout(item: OverlayItem, g: GraphicStyle, width: Float): Layout {
+        val w = max(2f, width.roundToInt().toFloat())
+        val h = max(2f, (w * g.aspect.coerceIn(0.05f, 8f)).roundToInt().toFloat())
+        val short = min(w, h)
+        val line = graphicLine(item, short)
+        var margin = line / 2 + 2f
+        if (item.shadowOn) {
+            val (ox, oy) = shadowOffset(item, short, 0.15f)
+            margin = max(margin, max(abs(ox), abs(oy)) + shadowBlur(item, short, 0.12f) * 1.7f + line / 2 + 2f)
+        }
+        margin = ceil(margin)
+        val rect = RectF(margin, margin, margin + w, margin + h)
+        return Layout(item, w, (w + margin * 2).toInt(), (h + margin * 2).toInt(), rect, null, null, false, graphicPath(g, rect))
+    }
+
+    private fun drawGraphic(layout: Layout, canvas: Canvas) {
+        val path = layout.boxPath ?: return
+        val item = layout.item
+        val g = item.graphic ?: return
+        val short = min(layout.content.width(), layout.content.height())
+        val line = graphicLine(item, short)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.strokeJoin = Paint.Join.ROUND
+
+        /** 画一遍形状：先填充（如果有），再描边。 */
+        fun shape(c: Canvas, fill: Int, stroke: Int) {
+            if (g.fill) {
+                paint.style = Paint.Style.FILL
+                paint.color = fill
+                c.drawPath(path, paint)
+            }
+            if (line > 0f) {
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = line
+                paint.color = stroke
+                c.drawPath(path, paint)
+            }
+        }
+
+        if (item.shadowOn) {
+            val white = 0xFFFFFFFF.toInt()
+            val coverage = coverage(layout.width, layout.height) { shape(it, white, white) }
+            val soft = Mask8.softened(coverage, shadowBlur(item, short, 0.12f))
+            val (ox, oy) = shadowOffset(item, short, 0.15f)
+            fill(soft, canvas, RectF(ox, oy, layout.width + ox, layout.height + oy), item.shadowColor.argb(item.shadowOpacity))
+        }
+        shape(canvas, item.color.argb(), item.strokeColor.argb())
+    }
+
+    /** 形状的轮廓（安卓坐标，y 向下）。 */
+    fun graphicPath(g: GraphicStyle, r: RectF): Path {
+        val short = min(r.width(), r.height())
+        val cx = r.centerX()
+        val cy = r.centerY()
+        return when (g.kind) {
+            GraphicKind.RECT -> cornerPolygon(
+                listOf(PointF(r.left, r.top), PointF(r.right, r.top), PointF(r.right, r.bottom), PointF(r.left, r.bottom)),
+                radius = g.corner * short / 2, cut = g.cut * short, cutMask = g.cutCorners,
+            )
+            GraphicKind.ELLIPSE -> Path().apply { addOval(r, Path.Direction.CW) }
+            GraphicKind.POLYGON -> {
+                val n = g.sides.coerceIn(3, 12)
+                val pts = (0 until n).map { i ->
+                    val a = PI / 2 - i * 2 * PI / n
+                    PointF(cx + cos(a).toFloat() * r.width() / 2, cy - sin(a).toFloat() * r.height() / 2)
+                }
+                cornerPolygon(pts, radius = g.corner * short / 4)
+            }
+            GraphicKind.STAR -> {
+                val n = g.sides.coerceIn(4, 12)
+                val pts = (0 until n * 2).map { i ->
+                    val k = if (i % 2 == 0) 1f else 0.45f
+                    val a = PI / 2 - i * PI / n
+                    PointF(cx + cos(a).toFloat() * r.width() / 2 * k, cy - sin(a).toFloat() * r.height() / 2 * k)
+                }
+                cornerPolygon(pts, radius = g.corner * short / 10)
+            }
+            GraphicKind.HEART -> {
+                // 单位方框里的爱心（y 向上），再拉到 r。
+                fun x(v: Float) = r.left + v * r.width()
+                fun y(v: Float) = r.top + (1 - v) * r.height()
+                Path().apply {
+                    moveTo(x(0.5f), y(0.02f))
+                    cubicTo(x(0.25f), y(0.22f), x(0.02f), y(0.4f), x(0.02f), y(0.62f))
+                    cubicTo(x(0.02f), y(0.98f), x(0.4f), y(1f), x(0.5f), y(0.8f))
+                    cubicTo(x(0.6f), y(1f), x(0.98f), y(0.98f), x(0.98f), y(0.62f))
+                    cubicTo(x(0.98f), y(0.4f), x(0.75f), y(0.22f), x(0.5f), y(0.02f))
+                    close()
+                }
+            }
+            GraphicKind.ARROW -> {
+                val head = min(r.width() * 0.45f, r.height())
+                val shaft = r.height() * 0.42f
+                val neck = r.right - head
+                val pts = listOf(
+                    PointF(r.left, cy - shaft / 2), PointF(neck, cy - shaft / 2), PointF(neck, r.top), PointF(r.right, cy),
+                    PointF(neck, r.bottom), PointF(neck, cy + shaft / 2), PointF(r.left, cy + shaft / 2),
+                )
+                cornerPolygon(pts, radius = g.corner * short / 8)
+            }
+            GraphicKind.BUBBLE -> {
+                // 圆角方框，左下角拖一个小尾巴。
+                val tail = short * 0.22f
+                val body = RectF(r.left, r.top, r.right, r.bottom - tail)
+                val rad = max(g.corner, 0.15f) * min(body.width(), body.height()) / 2
+                val box = Path().apply { addRoundRect(body, rad, rad, Path.Direction.CW) }
+                val tip = Path().apply {
+                    moveTo(body.left + body.width() * 0.18f, body.bottom - 1)
+                    lineTo(body.left + body.width() * 0.1f, r.bottom)
+                    lineTo(body.left + body.width() * 0.34f, body.bottom - 1)
+                    close()
+                }
+                // 合成一个轮廓：描边时尾巴和方框之间不会多出一道线。
+                box.op(tip, Path.Op.UNION)
+                box
+            }
+        }
+    }
+
+    /** 多边形：每个角可以圆角，也可以切掉（cutMask 里第 i 位 = 第 i 个角）。 */
+    private fun cornerPolygon(pts: List<PointF>, radius: Float, cut: Float = 0f, cutMask: Int = 0): Path {
+        val n = pts.size
+        val p = Path()
+        if (n < 3) return p
+        fun len(a: PointF, b: PointF) = hypot(b.x - a.x, b.y - a.y)
+        fun unit(a: PointF, b: PointF): PointF {
+            val d = max(len(a, b), 0.0001f)
+            return PointF((b.x - a.x) / d, (b.y - a.y) / d)
+        }
+        // 从第 0 条边的中点出发，绕一圈。
+        p.moveTo((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2)
+        for (k in 1..n) {
+            val i = k % n
+            val prev = pts[(i - 1 + n) % n]
+            val cur = pts[i]
+            val next = pts[(i + 1) % n]
+            val maxLen = min(len(prev, cur), len(cur, next)) / 2
+            val a = unit(cur, prev)
+            val b = unit(cur, next)
+            if (cut > 0f && cutMask and (1 shl i) != 0) {
+                val c = min(cut, maxLen)
+                p.lineTo(cur.x + a.x * c, cur.y + a.y * c)
+                p.lineTo(cur.x + b.x * c, cur.y + b.y * c)
+            } else if (radius > 0.5f) {
+                roundCorner(p, cur, a, b, min(radius, maxLen), maxLen)
+            } else {
+                p.lineTo(cur.x, cur.y)
+            }
+        }
+        p.close()
+        return p
+    }
+
+    /** 在 cur 这个角画圆角：a、b 是从角出发沿两条边的方向。切点离角最多 maxLen。 */
+    private fun roundCorner(p: Path, cur: PointF, a: PointF, b: PointF, radius: Float, maxLen: Float) {
+        val theta = acos((a.x * b.x + a.y * b.y).coerceIn(-1f, 1f))
+        if (theta < 0.01f || theta > PI.toFloat() - 0.01f) {
+            p.lineTo(cur.x, cur.y)
+            return
+        }
+        val half = tan(theta / 2)
+        val t = min(radius / half, maxLen)
+        val r = t * half
+        val turn = PI.toFloat() - theta
+        val k = 4f / 3f * tan(turn / 4) * r
+        val p1x = cur.x + a.x * t
+        val p1y = cur.y + a.y * t
+        val p2x = cur.x + b.x * t
+        val p2y = cur.y + b.y * t
+        p.lineTo(p1x, p1y)
+        p.cubicTo(p1x - a.x * k, p1y - a.y * k, p2x - b.x * k, p2y - b.y * k, p2x, p2y)
     }
 }

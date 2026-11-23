@@ -13,7 +13,7 @@ import com.taoo.xiutu.editor.Tool
 import com.taoo.xiutu.editor.ToolSession
 import java.util.UUID
 
-/** 文字和贴纸两个工具共用：画面上的全部文字、贴纸一起编辑，确认时合成一步。 */
+/** 文字、贴纸、形状三个工具共用：画面上的全部文字、贴纸、形状一起编辑，确认时合成一步。 */
 class OverlaySession(model: EditorModel, tool: Tool) : ToolSession(model, tool), TextStarter {
     var items by mutableStateOf<List<OverlayItem>>(emptyList())
         private set
@@ -53,7 +53,11 @@ class OverlaySession(model: EditorModel, tool: Tool) : ToolSession(model, tool),
 
     @Composable
     override fun Panel() {
-        if (tool == Tool.TEXT) TextPanel(this) else StickerPanel(this)
+        when (tool) {
+            Tool.TEXT -> TextPanel(this)
+            Tool.GRAPHIC -> GraphicPanel(this)
+            else -> StickerPanel(this)
+        }
     }
 
     // MARK: 增删改
@@ -102,6 +106,19 @@ class OverlaySession(model: EditorModel, tool: Tool) : ToolSession(model, tool),
     /** 加一个已经配好样式的项（标签贴纸用）。 */
     fun addOverlay(template: OverlayItem): String =
         append(place(template.copy(id = UUID.randomUUID().toString(), scale = 1f, rotation = 0f)))
+
+    /** 加一个形状。默认是一条半透明的黑色横条（做字幕条、标签底最常用）。 */
+    fun addGraphic(kind: GraphicKind): String {
+        val g = GraphicStyle(kind = kind, sides = if (kind == GraphicKind.STAR) 5 else 6)
+        val base = OverlayItem(text = OverlayItem.IMAGE_PLACEHOLDER, isSticker = true)
+        val item = when (kind) {
+            GraphicKind.RECT -> base.copy(graphic = g.copy(aspect = 0.22f), size = 0.8f, color = OverlayColor.black, opacity = 0.6f)
+            GraphicKind.ARROW -> base.copy(graphic = g.copy(aspect = 0.45f), size = 0.4f, color = OverlayColor.of(1.0, 0.27, 0.27))
+            GraphicKind.BUBBLE -> base.copy(graphic = g.copy(aspect = 0.7f), size = 0.45f, color = OverlayColor.white)
+            else -> base.copy(graphic = g, size = 0.35f, color = OverlayColor.of(1.0, 0.84, 0.04))
+        }
+        return append(place(item))
+    }
 
     fun update(id: String, change: (OverlayItem) -> OverlayItem) {
         items = items.map { if (it.id == id) change(it) else it }
